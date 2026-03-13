@@ -1,0 +1,158 @@
+{
+  "projectType": "saas",
+  "projectName": "CBDB Online",
+  "projectDescription": "China Biographical Database (CBDB) online data entry and management system for historical Chinese biographical records",
+  "theme": "linden",
+  "primaryColor": "#590b0b",
+  "lightColor": "#a2747c",
+  "darkColor": "#ba9d9e",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/biographical-records",
+              "concepts/data-model",
+              "concepts/user-roles",
+              "concepts/operations-audit"
+            ]
+          },
+          {
+            "group": "User Guides",
+            "pages": [
+              "guides/managing-biographies",
+              "guides/office-postings",
+              "guides/kinship-relations",
+              "guides/social-associations",
+              "guides/code-tables",
+              "guides/search"
+            ]
+          },
+          {
+            "group": "Database",
+            "pages": [
+              "database/overview",
+              "database/schema",
+              "database/migrations",
+              "database/compatibility"
+            ]
+          },
+          {
+            "group": "Administration",
+            "pages": [
+              "admin/user-management",
+              "admin/operations-log",
+              "admin/data-export",
+              "admin/monitoring"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Public API",
+            "pages": [
+              "api/offices",
+              "api/entry-paths",
+              "api/places",
+              "api/office-postings",
+              "api/entry-postings",
+              "api/relatives",
+              "api/associations",
+              "api/query-by-place"
+            ]
+          },
+          {
+            "group": "Web API",
+            "pages": [
+              "api/mutation",
+              "api/name-search"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Developer Guide",
+        "groups": [
+          {
+            "group": "Architecture",
+            "pages": [
+              "dev/architecture",
+              "dev/tech-stack",
+              "dev/repository-pattern",
+              "dev/testing"
+            ]
+          },
+          {
+            "group": "Development",
+            "pages": [
+              "dev/setup",
+              "dev/coding-standards",
+              "dev/migrations",
+              "dev/frontend",
+              "dev/ai-agents"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "dev/deployment",
+              "dev/docker",
+              "dev/sqlite-sync"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Biographical data entry and management system",
+    "Historical Chinese person records database",
+    "Office posting and career path tracking",
+    "Kinship and social relationship network",
+    "Multi-level user roles and permissions",
+    "Comprehensive operation audit log",
+    "Public REST API for data queries",
+    "Code table management system",
+    "View table query interface",
+    "SQLite export for research datasets"
+  ],
+  "publicApiSurface": [
+    "/api/post_list - Get office positions by category",
+    "/api/entry_list - Get entry paths by category",
+    "/api/place_list - Search places by name and time",
+    "/api/place_belongs_to - Get sub-places by parent ID",
+    "/api/office_list_by_name - Search offices by name",
+    "/api/entry_list_by_name - Search entry paths by name",
+    "/api/query_office_postings - Query office posting records",
+    "/api/query_entry_postings - Query people by entry path",
+    "/api/query_relatives_2 - Query kinship relationships",
+    "/api/get_assoc - Get associations by type code",
+    "/api/find_assoc - Search associations by name",
+    "/api/query_associates - Query social associations",
+    "/api/query_assoc_network - Query social network",
+    "/api/query_by_place - Query people by place",
+    "/cbdbapi/person - CBDB API v1 person lookup",
+    "/api/v2/mutate - Mutation API for data updates"
+  ]
+}
