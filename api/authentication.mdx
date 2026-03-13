@@ -1,0 +1,541 @@
+---
+title: '認證方式'
+description: 'CBDB Online API 認證架構：Session Cookie 與 Personal Access Token'
+---
+
+## 認證方式概覽
+
+CBDB Online API 使用 **Laravel Sanctum** 提供簡潔、安全的 API 認證機制。系統支援兩種認證方式，適用於不同的使用場景：
+
+<CardGroup cols={2}>
+  <Card title="Session Cookie" icon="cookie">
+    適用於 Web 前端 SPA，自動處理認證
+  </Card>
+  <Card title="Personal Access Token" icon="key">
+    適用於外部應用、腳本與移動應用
+  </Card>
+</CardGroup>
+
+## Session Cookie 認證（Web 前端推薦）
+
+### 工作原理
+
+當使用者透過 Web 界面登入後，Laravel 會建立一個 Session。Sanctum 利用這個 Session 來認證 API 請求，完全自動化，無需手動管理 Token。
+
+### 優點
+
+<CardGroup cols={2}>
+  <Card title="零配置" icon="magic">
+    無需手動管理 Token，自動處理認證
+  </Card>
+  <Card title="CSRF 保護" icon="shield">
+    內建跨站請求偽造保護
+  </Card>
+  <Card title="原生整合" icon="puzzle-piece">
+    與 Laravel 認證系統完美集成
+  </Card>
+  <Card title="SPA 友好" icon="browser">
+    專為單頁應用設計
+  </Card>
+</CardGroup>
+
+### 使用方式
+
+#### 1. 使用者登入
+
+```javascript
+// 使用標準的 Laravel Auth 登入表單
+await axios.post('/login', {
+  email: 'user@example.com',
+  password: 'password'
+});
+```
+
+#### 2. 調用 API
+
+```javascript
+// 配置 Axios 以自動發送 Cookie
+window.axios.defaults.withCredentials = true;
+
+// 直接調用 API，Session 會自動處理認證
+const response = await axios.get('/api/select/search/addr', {
+  params: { keyword: '北京' }
+});
+
+console.log(response.data);
+```
+
+#### 3. CSRF 保護
+
+確保所有 POST/PUT/DELETE 請求包含 CSRF Token：
+
+```html
+<!-- 在 Blade 模板中 -->
+<meta name="csrf-token" content="{{ csrf_token() }}">
+```
+
+```javascript
+// 在 JavaScript 中配置 Axios
+const token = document.head.querySelector('meta[name="csrf-token"');
+if (token) {
+  axios.defaults.headers.common['X-CSRF-TOKEN'] = token.content;
+}
+```
+
+<Note>
+CBDB Online 的前端已在 `resources/js/app.js` 中自動配置 CSRF Token 和 Cookie 認證，開發者無需手動設置。
+</Note>
+
+## Personal Access Token 認證（外部應用推薦）
+
+### 使用場景
+
+<CardGroup cols={2}>
+  <Card title="數據分析" icon="chart-line">
+    Python/R 腳本進行資料分析
+  </Card>
+  <Card title="外部整合" icon="link">
+    第三方應用與服務整合
+  </Card>
+  <Card title="自動化工具" icon="robot">
+    定時任務與自動化腳本
+  </Card>
+  <Card title="移動應用" icon="mobile">
+    iOS/Android 原生應用
+  </Card>
+</CardGroup>
+
+### 獲取 API Token
+
+<Steps>
+  <Step title="登入系統">
+    使用您的 CBDB Online 帳號登入系統
+  </Step>
+  <Step title="進入個人資料頁面">
+    導航至 `/profile` 頁面
+  </Step>
+  <Step title="創建新 Token">
+    - 點擊「創建新 Token」按鈕
+    - 輸入 Token 名稱（例如：「我的 Python 腳本」）
+    - 選擇有效期限：30 天、90 天、180 天、1 年或永久
+    - 點擊「創建」
+  </Step>
+  <Step title="複製並保存 Token">
+    <Warning>
+    Token 只會顯示**一次**，請立即複製並妥善保存！
+    </Warning>
+  </Step>
+</Steps>
+
+### 使用 Token 調用 API
+
+API Token 透過 `Authorization` HTTP 標頭傳遞，格式為 `Bearer {token}`。
+
+#### Python 範例
+
+```python
+import requests
+import os
+
+# 從環境變數讀取 API Token（推薦做法）
+API_BASE_URL = 'https://input.cbdb.fas.harvard.edu/api'
+API_TOKEN = os.getenv('CBDB_API_TOKEN')
+
+headers = {
+    'Authorization': f'Bearer {API_TOKEN}',
+    'Accept': 'application/json'
+}
+
+# 查詢使用者資訊
+response = requests.get(
+    f'{API_BASE_URL}/user',
+    headers=headers
+)
+
+user = response.json()
+print(f"當前使用者: {user['name']}")
+
+# 搜尋地址
+response = requests.get(
+    f'{API_BASE_URL}/select/search/addr',
+    headers=headers,
+    params={'keyword': '北京'}
+)
+
+data = response.json()
+print(f"找到 {len(data)} 筆地址記錄")
+```
+
+#### cURL 範例
+
+```bash
+# 查詢使用者資訊
+curl -X GET \
+  'https://input.cbdb.fas.harvard.edu/api/user' \
+  -H 'Authorization: Bearer YOUR_API_TOKEN_HERE' \
+  -H 'Accept: application/json'
+
+# 搜尋地址
+curl -X GET \
+  'https://input.cbdb.fas.harvard.edu/api/select/search/addr?keyword=%E5%8C%97%E4%BA%AC' \
+  -H 'Authorization: Bearer YOUR_API_TOKEN_HERE' \
+  -H 'Accept: application/json'
+```
+
+#### JavaScript (Node.js) 範例
+
+```javascript
+const axios = require('axios');
+
+const API_BASE_URL = 'https://input.cbdb.fas.harvard.edu/api';
+const API_TOKEN = process.env.CBDB_API_TOKEN;
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  headers: {
+    'Authorization': `Bearer ${API_TOKEN}`,
+    'Accept': 'application/json'
+  }
+});
+
+// 查詢使用者資訊
+api.get('/user')
+  .then(response => {
+    console.log('當前使用者:', response.data.name);
+  })
+  .catch(error => {
+    console.error('API 錯誤:', error.response?.data || error.message);
+  });
+
+// 搜尋地址
+api.get('/select/search/addr', {
+  params: { keyword: '北京' }
+})
+  .then(response => {
+    console.log(`找到 ${response.data.length} 筆地址記錄`);
+  });
+```
+
+#### R 範例
+
+```r
+library(httr)
+library(jsonlite)
+
+# 從環境變數讀取 API Token
+API_BASE_URL <- "https://input.cbdb.fas.harvard.edu/api"
+API_TOKEN <- Sys.getenv("CBDB_API_TOKEN")
+
+# 設定認證標頭
+headers <- add_headers(
+  `Authorization` = paste("Bearer", API_TOKEN),
+  `Accept` = "application/json"
+)
+
+# 查詢使用者資訊
+response <- GET(
+  paste0(API_BASE_URL, "/user"),
+  headers
+)
+
+user <- content(response, "parsed")
+cat("當前使用者:", user$name, "\n")
+
+# 搜尋地址
+response <- GET(
+  paste0(API_BASE_URL, "/select/search/addr"),
+  query = list(keyword = "北京"),
+  headers
+)
+
+data <- content(response, "parsed")
+cat("找到", length(data), "筆地址記錄\n")
+```
+
+## Token 管理
+
+### 查看與管理 Token
+
+在 `/profile` 頁面，您可以管理所有 API Token：
+
+<CardGroup cols={3}>
+  <Card title="查看清單" icon="list">
+    檢視所有 Token 的名稱、創建時間、最後使用時間與到期時間
+  </Card>
+  <Card title="撤銷單個" icon="trash">
+    不再需要的 Token 可隨時撤銷
+  </Card>
+  <Card title="撤銷所有" icon="bomb">
+    一次性撤銷所有 Token（緊急情況使用）
+  </Card>
+</CardGroup>
+
+### Token 安全最佳實踐
+
+<Warning>
+**安全提醒**：API Token 等同於您的帳號密碼，必須妥善保管！
+</Warning>
+
+#### 1. 使用環境變數
+
+```python
+# ❌ 不推薦：硬編碼在程式碼中
+API_TOKEN = '1|abcdefghijklmnopqrstuvwxyz1234567890'
+
+# ✅ 推薦：使用環境變數
+import os
+API_TOKEN = os.getenv('CBDB_API_TOKEN')
+```
+
+在 `.env` 檔案中設定（**不要提交到版本控制**）：
+
+```bash
+CBDB_API_TOKEN=1|your_actual_token_here
+```
+
+#### 2. 定期輪換 Token
+
+<Tip>
+建議定期創建新 Token 並撤銷舊 Token，特別是在以下情況：
+
+- 每 3-6 個月輪換一次
+- 懷疑 Token 可能洩漏
+- 員工離職或權限變更
+- 應用程式部署環境變更
+</Tip>
+
+#### 3. 設定適當的有效期限
+
+| 使用場景 | 建議有效期 |
+|---------|----------|
+| 短期測試與開發 | 30 天 |
+| 常規應用程式 | 90-180 天 |
+| 長期服務（需定期更新） | 1 年 |
+| 永久服務（需嚴格監控） | 永久（謹慎使用） |
+
+#### 4. 最小權限原則
+
+<Note>
+目前 CBDB API Token 繼承使用者的完整權限。未來版本將支援細粒度權限控制（Scopes）。
+</Note>
+
+#### 5. 不要分享 Token
+
+- 每個使用者/應用應有獨立的 Token
+- 不要透過電子郵件、即時通訊工具傳輸 Token
+- 不要將 Token 提交到 Git 儲存庫
+- 不要在公開的日誌或錯誤訊息中顯示 Token
+
+## 可選認證端點
+
+<Info>
+以下端點支援**可選認證**（Optional Authentication）：
+
+- 已登入使用者可正常存取
+- 未登入使用者也能存取（可能有功能限制）
+
+這些端點主要用於 Web 前端的 UI 元件（如下拉選單、自動完成）。
+</Info>
+
+### 選擇器與搜尋 API
+
+所有 `/api/select/*` 和 `/api/select/search/*` 端點皆支援可選認證。
+
+範例：
+
+```bash
+# 不需認證即可存取
+curl 'https://input.cbdb.fas.harvard.edu/api/select/search/addr?keyword=%E5%8C%97%E4%BA%AC'
+
+# 已登入使用者也可透過 Token 存取（相同功能）
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  'https://input.cbdb.fas.harvard.edu/api/select/search/addr?keyword=%E5%8C%97%E4%BA%AC'
+```
+
+## 錯誤處理
+
+### 常見認證錯誤
+
+| 狀態碼 | 錯誤訊息 | 原因 | 解決方案 |
+|-------|---------|------|----------|
+| `401` | `Unauthenticated.` | Token 無效、過期或未提供 | 檢查 Token 是否正確，是否已過期 |
+| `403` | `Forbidden` | 使用者無權限存取該資源 | 檢查使用者帳號權限 |
+| `419` | `CSRF token mismatch` | CSRF Token 無效（Session 認證） | 刷新頁面重新獲取 CSRF Token |
+| `429` | `Too Many Requests` | 超過速率限制 | 減少請求頻率，稍後重試 |
+
+### 錯誤回應範例
+
+```json
+{
+  "message": "Unauthenticated."
+}
+```
+
+### 偵錯技巧
+
+<Tip>
+如果 API 請求失敗，請檢查：
+
+1. **Token 格式**：確保使用 `Bearer {token}` 格式
+2. **Token 內容**：複製時是否包含多餘空格或換行
+3. **Token 狀態**：在 `/profile` 頁面確認 Token 未過期且未被撤銷
+4. **請求標頭**：使用瀏覽器開發者工具或 `curl -v` 檢查請求標頭
+5. **速率限制**：是否在短時間內發送過多請求
+</Tip>
+
+## 速率限制
+
+<Warning>
+API 請求受以下速率限制：
+
+- **全局限制**：600 請求/分鐘（所有端點共用）
+
+超過限制時，伺服器會回傳 `429 Too Many Requests` 錯誤，並在 `Retry-After` 標頭中告知何時可重試。
+</Warning>
+
+範例回應：
+
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
+Content-Type: application/json
+
+{
+  "message": "Too Many Requests"
+}
+```
+
+## 從 Passport 遷移
+
+<Note>
+CBDB Online 已從 Laravel Passport 遷移到 Laravel Sanctum。
+</Note>
+
+### 遷移步驟
+
+如果您之前使用 Passport 的 Personal Access Token：
+
+<Steps>
+  <Step title="了解變更">
+    舊的 Passport Token 已失效，無法繼續使用
+  </Step>
+  <Step title="創建新 Token">
+    在 `/profile` 頁面創建新的 Sanctum Token
+  </Step>
+  <Step title="更新應用程式">
+    使用新的 Token 更新所有外部應用與腳本的設定
+  </Step>
+  <Step title="測試連線">
+    驗證新 Token 能正常存取 API
+  </Step>
+</Steps>
+
+### 為什麼選擇 Sanctum？
+
+<CardGroup cols={2}>
+  <Card title="更簡單" icon="puzzle-piece">
+    專注於 SPA 和 Token 認證，無 OAuth2 的複雜性
+  </Card>
+  <Card title="更輕量" icon="feather">
+    不需要 OAuth2 伺服器的開銷
+  </Card>
+  <Card title="更適合需求" icon="bullseye">
+    CBDB 不需要 OAuth2 的第三方授權流程
+  </Card>
+  <Card title="更好的整合" icon="link">
+    與 Laravel 原生認證無縫集成
+  </Card>
+</CardGroup>
+
+## 常見問題
+
+<AccordionGroup>
+  <Accordion title="我可以同時擁有多個 API Token 嗎？">
+    可以！您可以為不同的應用或腳本創建多個 Token，方便分別管理和撤銷。例如：
+    
+    - Python 分析腳本
+    - R 統計工具
+    - 移動應用
+    - 第三方整合
+    
+    每個 Token 可以有不同的名稱和有效期限。
+  </Accordion>
+
+  <Accordion title="Token 會過期嗎？">
+    創建 Token 時可以設置有效期限：
+    
+    - 30 天
+    - 90 天
+    - 180 天
+    - 1 年
+    - 永久（不建議，除非有特殊需求）
+    
+    建議為安全考慮設置合理的有效期限，並定期輪換。
+  </Accordion>
+
+  <Accordion title="如何撤銷洩漏的 Token？">
+    立即採取以下步驟：
+    
+    1. 登入 CBDB Online 系統
+    2. 前往 `/profile` 頁面
+    3. 找到對應的 Token 並點擊「撤銷」
+    4. 如果不確定哪個 Token 洩漏，點擊「撤銷所有 Token」
+    5. 創建新的 Token 並更新應用程式設定
+    
+    撤銷後，使用該 Token 的所有請求會立即失效。
+  </Accordion>
+
+  <Accordion title="Web 前端需要手動管理 Token 嗎？">
+    不需要！Web 前端使用 **Session Cookie 認證**，完全自動化：
+    
+    - 使用者登入後自動建立 Session
+    - API 請求自動附帶認證資訊
+    - CSRF Token 自動處理
+    
+    只有外部應用（Python、R、移動應用等）才需要使用 Personal Access Token。
+  </Accordion>
+
+  <Accordion title="為什麼 API 調用失敗，返回 401 錯誤？">
+    檢查以下幾點：
+    
+    1. **Token 格式**：必須是 `Authorization: Bearer {token}`
+    2. **Token 內容**：確保沒有多餘的空格或換行
+    3. **Token 狀態**：檢查是否已過期或被撤銷
+    4. **端點權限**：確認該端點需要認證
+    5. **使用者權限**：確認帳號有存取該資源的權限
+    
+    對於 Session 認證，確保使用者已登入且 Session 未過期。
+  </Accordion>
+
+  <Accordion title="如何在 Postman 中使用 API Token？">
+    在 Postman 中設定認證：
+    
+    1. 選擇請求的 **Authorization** 標籤
+    2. Type 選擇 **Bearer Token**
+    3. 在 Token 欄位貼上您的 API Token
+    4. 發送請求
+    
+    或者手動添加標頭：
+    
+    - Key: `Authorization`
+    - Value: `Bearer YOUR_API_TOKEN_HERE`
+  </Accordion>
+</AccordionGroup>
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="API 概覽" icon="map" href="/api/overview">
+    了解所有可用的 API 端點
+  </Card>
+  <Card title="端點詳細文檔" icon="book" href="/api/endpoints">
+    查看各端點的參數與回應格式
+  </Card>
+</CardGroup>
+
+## 技術支援
+
+如有認證相關問題，請聯繫：
+
+- **GitHub Issues**：[cbdb-project/cbdb-online](https://github.com/cbdb-project/cbdb-online)
+- **電子郵件**：cbdb@fas.harvard.edu

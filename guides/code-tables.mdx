@@ -1,0 +1,341 @@
+---
+title: "Code Tables"
+description: "Manage standardized reference codes for offices, places, dynasties, and more"
+icon: "table-list"
+---
+
+## Overview
+
+Code tables provide standardized reference data used throughout CBDB Online. These tables ensure data consistency and enable structured queries across the database.
+
+## Accessing Code Tables
+
+CBDB Online provides a unified interface for viewing and managing code tables:
+
+**URL Pattern**: `/codes/{table_name}`
+
+**Example**: `/codes/OFFICE_CODES` - Browse all government office codes
+
+<Note>
+Only tables whitelisted in `config/codes.php` are accessible through this interface. See [Codes Tables Configuration](/dev/code-tables-config) for the complete list.
+</Note>
+
+## Main Code Tables
+
+<CardGroup cols={3}>
+  <Card title="OFFICE_CODES" icon="building" href="/codes/OFFICE_CODES">
+    Government positions and offices
+  </Card>
+  <Card title="ADDR_CODES" icon="map-location-dot" href="/codes/ADDR_CODES">
+    Geographic locations and places
+  </Card>
+  <Card title="DYNASTIES" icon="crown" href="/codes/DYNASTIES">
+    Chinese dynasties and periods
+  </Card>
+  <Card title="ENTRY_CODES" icon="door-open" href="/codes/ENTRY_CODES">
+    Entry paths to government service
+  </Card>
+  <Card title="KINSHIP_CODES" icon="people-group" href="/codes/KINSHIP_CODES">
+    Family relationship types
+  </Card>
+  <Card title="ASSOC_CODES" icon="handshake" href="/codes/ASSOC_CODES">
+    Social association types
+  </Card>
+</CardGroup>
+
+## Code Table Features
+
+### Browse and Search
+
+The `/codes/{table}` interface provides:
+
+<Steps>
+  <Step title="Automatic table detection">
+    The system reads table structure from the database schema to determine available columns.
+  </Step>
+  <Step title="Searchable columns">
+    - Configured in `config/view_table_searchable.php`
+    - Supports searching across multiple columns
+    - Case-insensitive search
+  </Step>
+  <Step title="Pagination">
+    - Default: 20 records per page
+    - Configurable per table
+  </Step>
+  <Step title="Column display customization">
+    - Hide specific columns using `hidden_columns` in config
+    - Rename columns with `column_renames`
+  </Step>
+</Steps>
+
+### Example: OFFICE_CODES
+
+```
+URL: /codes/OFFICE_CODES
+Search: ?q=尚书
+```
+
+Searchable fields:
+- `c_office_name_chn` (Chinese name)
+- `c_office_name` (English name)
+- `c_office_chn_alt` (Alternative Chinese names)
+
+## Internal Tables (Read-Only)
+
+Tables with `CBDB__` prefix are internal helper tables and are **read-only**:
+
+<CardGroup cols={2}>
+  <Card title="CBDB__NAME_FTS" icon="magnifying-glass">
+    Name search inverted index for high-performance suffix matching
+  </Card>
+  <Card title="CBDB__TRAD_SIMP_MAP" icon="language">
+    Traditional-Simplified Chinese character mapping (OpenCC standard)
+  </Card>
+</CardGroup>
+
+<Warning>
+Internal tables (`CBDB__*`) cannot be edited through the web interface. They are maintained by system processes and commands.
+</Warning>
+
+## Configuration
+
+### Whitelist Configuration
+
+Code tables must be whitelisted in `config/codes.php`:
+
+```php config/codes.php
+return [
+    'allowed_tables' => [
+        'ADDR_CODES',
+        'ASSOC_CODES',
+        'DYNASTIES',
+        'ENTRY_CODES',
+        'KINSHIP_CODES',
+        'NIAN_HAO',
+        'OFFICE_CODES',
+        // ... and more
+        
+        // Internal tables (read-only)
+        'CBDB__NAME_FTS',
+        'CBDB__TRAD_SIMP_MAP',
+    ],
+];
+```
+
+### Column Customization
+
+Customize display and search behavior in `config/codes.php`:
+
+```php Column customization
+'column_config' => [
+    'OFFICE_CODES' => [
+        'hidden_columns' => ['created_at', 'updated_at'],
+        'column_renames' => [
+            'c_office_id' => 'Office ID',
+            'c_office_name_chn' => 'Chinese Name',
+            'c_office_name' => 'English Name',
+        ],
+    ],
+],
+```
+
+### Searchable Columns
+
+Define which columns are searchable in `config/view_table_searchable.php`:
+
+```php Searchable columns
+'OFFICE_CODES' => [
+    'c_office_name_chn',
+    'c_office_name',
+    'c_office_chn_alt',
+],
+```
+
+## Controller Implementation
+
+The `CodesController` handles all code table requests:
+
+```php CodesController.php
+public function index($table, Request $request) {
+    // Validate table is whitelisted
+    if (!in_array($table, config('codes.allowed_tables'))) {
+        abort(404, 'Table not found');
+    }
+    
+    // Check if table is read-only (CBDB__ prefix)
+    $isReadOnly = str_starts_with($table, 'CBDB__');
+    
+    // Build query with search
+    $query = DB::table($table);
+    if ($search = $request->get('q')) {
+        $searchableColumns = config("view_table_searchable.{$table}", []);
+        $query->where(function($q) use ($searchableColumns, $search) {
+            foreach ($searchableColumns as $col) {
+                $q->orWhere($col, 'LIKE', "%{$search}%");
+            }
+        });
+    }
+    
+    // Paginate results
+    $data = $query->paginate(20);
+    
+    return view('codes.index', [
+        'table' => $table,
+        'data' => $data,
+        'isReadOnly' => $isReadOnly,
+    ]);
+}
+```
+
+## Key Code Tables Reference
+
+### OFFICE_CODES
+
+Government positions and administrative offices.
+
+**Key Fields**:
+- `c_office_id` (INT): Unique office identifier
+- `c_office_name_chn` (VARCHAR): Chinese name
+- `c_office_name` (VARCHAR): English name
+- `c_office_chn_alt` (TEXT): Alternative Chinese names (semicolon-separated)
+
+**Usage**: Referenced by `POSTED_TO_OFFICE_DATA` for office postings.
+
+### ADDR_CODES
+
+Geographic locations including administrative divisions, places, and geographic features.
+
+**Key Fields**:
+- `c_addr_id` (INT): Unique address identifier
+- `c_name_chn` (VARCHAR): Chinese place name
+- `c_name` (VARCHAR): Romanized name
+- `c_firstyear` (INT): First year of existence
+- `c_lastyear` (INT): Last year of existence
+- `x_coord` (DECIMAL): Longitude
+- `y_coord` (DECIMAL): Latitude
+- `c_belongs_to` (INT): Parent place ID
+
+**Usage**: Referenced by `BIOG_ADDR_DATA`, `POSTED_TO_ADDR_DATA` for geographic associations.
+
+### DYNASTIES
+
+Chinese dynasties and historical periods.
+
+**Key Fields**:
+- `c_dy` (INT): Dynasty code
+- `c_dynasty_chn` (VARCHAR): Chinese dynasty name
+- `c_dynasty` (VARCHAR): English dynasty name
+- `c_firstyear` (INT): Start year
+- `c_lastyear` (INT): End year
+
+**Usage**: Referenced by `BIOG_MAIN.c_dy` for person's dynasty association.
+
+### ENTRY_CODES
+
+Paths to government service (examinations, recommendations, inheritance, etc.).
+
+**Key Fields**:
+- `c_entry_code` (INT): Unique entry code
+- `c_entry_desc_chn` (VARCHAR): Chinese description
+- `c_entry_desc` (VARCHAR): English description
+
+**Usage**: Referenced by `ENTRY_DATA` for person's entry path to service.
+
+### KINSHIP_CODES
+
+Family relationship types.
+
+**Key Fields**:
+- `c_kinrel_code` (VARCHAR): Relationship code (e.g., 'F' for father)
+- `c_kinrel_desc_chn` (VARCHAR): Chinese description
+- `c_kinrel_desc` (VARCHAR): English description
+
+**Usage**: Referenced by `KIN_DATA.c_kinrel_code` for kinship relations.
+
+### ASSOC_CODES
+
+Social association and relationship types.
+
+**Key Fields**:
+- `c_assoc_code` (INT): Association code
+- `c_assoc_desc_chn` (VARCHAR): Chinese description
+- `c_assoc_desc` (VARCHAR): English description
+
+**Usage**: Referenced by `ASSOC_DATA.c_assoc_code` for social associations.
+
+## API Access
+
+Code tables are also available via REST API:
+
+### Get Code List
+
+```bash Get offices by category
+curl "https://input.cbdb.fas.harvard.edu/api/post_list?id=06"
+```
+
+### Search by Name
+
+```bash Search offices by name
+curl "https://input.cbdb.fas.harvard.edu/api/office_list_by_name?pName=%E5%B0%9A%E6%9B%B8&accurate=0"
+```
+
+See [API Reference](/api/overview) for complete endpoint documentation.
+
+## Editing Code Tables
+
+<Warning>
+**Requires Expert or Administrator privileges.** Regular users cannot edit code tables.
+</Warning>
+
+For most code tables, editing is done directly in the database or through administrative tools. The web interface is primarily for browsing and searching.
+
+### When to Add New Codes
+
+Add new codes when:
+- New office position not in `OFFICE_CODES`
+- New geographic location not in `ADDR_CODES`
+- New relationship type not in `KINSHIP_CODES` or `ASSOC_CODES`
+
+<Tip>
+Before adding new codes, search thoroughly to ensure the code doesn't already exist under a different name or romanization.
+</Tip>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Standard Codes">
+    - Always select from existing code tables
+    - Don't create ad-hoc values in data entry
+    - Request new codes be added to reference tables if needed
+  </Accordion>
+  
+  <Accordion title="Search Before Adding">
+    - Use search function to find existing codes
+    - Check alternative names and romanizations
+    - Consider hierarchical relationships (places, office categories)
+  </Accordion>
+  
+  <Accordion title="Maintain Data Quality">
+    - Use correct traditional Chinese characters
+    - Follow standard romanization (Pinyin/Wade-Giles)
+    - Include alternative names when known
+    - Add source notes for newly added codes
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Complete schema documentation
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Access code tables via API
+  </Card>
+  <Card title="Configuration" icon="gear" href="/dev/setup">
+    Configure code table settings
+  </Card>
+  <Card title="Operations Log" icon="list-check" href="/admin/operations-log">
+    Track code table changes
+  </Card>
+</CardGroup>

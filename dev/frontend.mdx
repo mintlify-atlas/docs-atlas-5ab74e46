@@ -1,0 +1,527 @@
+---
+title: 前端開發
+description: Vite 構建系統、Vue 3 組件、AdminLTE 3 界面、運行 npm run dev/build 的完整指南
+---
+
+## 技術架構
+
+本專案已從 Laravel Mix/webpack 遷移至 **Vite**，使用現代化的前端技術棧：
+
+<CardGroup cols={2}>
+  <Card title="Vite" icon="bolt">
+    快速的前端構建工具，支持熱模塊替換（HMR）
+  </Card>
+  <Card title="Vue 3" icon="vuejs">
+    漸進式 JavaScript 框架，用於構建交互式 UI 組件
+  </Card>
+  <Card title="AdminLTE 3" icon="palette">
+    基於 Bootstrap 4 的免費後台管理模板
+  </Card>
+  <Card title="jQuery 3.5" icon="js">
+    經典 JavaScript 庫，用於 DOM 操作和插件兼容
+  </Card>
+</CardGroup>
+
+## 項目結構
+
+### 前端資源目錄
+
+```
+resources/
+├── js/
+│   ├── app.js              # 主入口：AdminLTE 3 + Vue 3 + 插件
+│   ├── datatables.js       # DataTables 插件
+│   ├── jquery-global.js    # 將 jQuery 暴露到全局
+│   ├── components/         # Vue 3 組件
+│   └── utils/              # 工具函數
+└── css/
+    ├── select2-overrides.css
+    ├── mobile-responsive.css
+    └── ai-autofill.css
+```
+
+### 編譯輸出目錄
+
+```
+public/
+└── build/
+    ├── manifest.json       # Vite 資源清單
+    ├── assets/
+    │   ├── app-*.js       # 編譯後的主入口
+    │   ├── datatables-*.js
+    │   └── *.css
+```
+
+## Vite 配置
+
+項目的 Vite 配置位於 `vite.config.js`：
+
+```javascript vite.config.js
+import { defineConfig } from 'vite';
+import laravel from 'laravel-vite-plugin';
+import vue from '@vitejs/plugin-vue';
+
+export default defineConfig({
+    plugins: [
+        laravel({
+            input: [
+                // Modern World (AdminLTE v3 + Vue 3)
+                'resources/js/app.js',          // 主要 UI 組件
+                'resources/js/datatables.js',   // DataTables 功能
+            ],
+            refresh: true,
+        }),
+        vue({
+            template: {
+                transformAssetUrls: {
+                    base: null,
+                    includeAbsolute: false,
+                },
+            },
+        }),
+    ],
+    resolve: {
+        alias: {
+            'vue': 'vue/dist/vue.esm-bundler.js',
+        },
+    },
+});
+```
+
+## 開發環境
+
+### 啟動 Vite 開發服務器
+
+```bash
+npm run dev
+```
+
+這將：
+- 啟動 Vite 開發服務器（默認運行在 `http://localhost:5173`）
+- 啟用**熱模塊替換（HMR）**，修改文件後自動刷新頁面
+- 提供 source maps 方便調試
+
+<Note>
+**開發模式特點**
+
+- 修改 JS/Vue/CSS 文件會**立即**反映在瀏覽器中
+- 不生成實際的編譯文件，資源通過 Vite dev server 提供
+- 適合本地開發和調試
+</Note>
+
+### 同時運行 PHP 開發服務器
+
+在另一個終端窗口運行 Laravel 開發服務器：
+
+```bash
+php artisan serve
+```
+
+現在你可以：
+1. 訪問 `http://localhost:8000` 查看應用
+2. 修改前端代碼會自動更新（通過 Vite HMR）
+3. 修改 PHP 代碼會在刷新頁面後生效
+
+## 生產環境構建
+
+### 編譯前端資源
+
+```bash
+npm run build
+# 或
+npm run prod
+```
+
+這將：
+- 編譯並優化所有 JavaScript 和 CSS
+- 生成文件到 `public/build/` 目錄
+- 創建 `manifest.json` 用於資源版本控制
+- 啟用代碼壓縮和 tree-shaking
+
+<Warning>
+**提交前必須構建**
+
+如果修改了 Vue/JS/CSS 文件，提交代碼前**必須**執行 `npm run build`。
+
+否則部署後前端會顯示舊版本！
+</Warning>
+
+### 構建輸出示例
+
+```bash
+$ npm run build
+
+vite v7.2.4 building for production...
+✓ 128 modules transformed.
+public/build/manifest.json              0.85 kB │ gzip: 0.31 kB
+public/build/assets/app-a1b2c3d4.js     245.32 kB │ gzip: 78.45 kB
+public/build/assets/datatables-e5f6g7h8.js  12.45 kB │ gzip: 4.23 kB
+✓ built in 2.34s
+```
+
+## 主入口文件：app.js
+
+`resources/js/app.js` 是主要入口文件，負責：
+
+```javascript resources/js/app.js
+// 1. 導入 AdminLTE 3 CSS
+import 'admin-lte/dist/css/adminlte.min.css';
+
+// 2. 導入 jQuery 並暴露到全局
+import $ from './jquery-global';
+
+// 3. 導入 Bootstrap 4 bundle（包含 Popper）
+import 'admin-lte/plugins/bootstrap/js/bootstrap.bundle';
+
+// 4. 導入 AdminLTE 3 JS
+import 'admin-lte';
+
+// 5. Select2 插件
+import 'select2/dist/css/select2.min.css';
+import '@ttskch/select2-bootstrap4-theme/dist/select2-bootstrap4.min.css';
+import select2 from 'select2';
+select2(window, $);
+
+// 6. 自定義 CSS 覆蓋
+import '../css/select2-overrides.css';
+import '../css/mobile-responsive.css';
+import '../css/ai-autofill.css';
+
+// 7. 設置 Select2 默認主題為 Bootstrap 4
+$.fn.select2.defaults.set('theme', 'bootstrap4');
+
+// 8. Vue 3 組件和邏輯...
+```
+
+<Note>
+**為什麼要暴露 jQuery 到全局？**
+
+許多舊的 jQuery 插件（如 DataTables、Select2）需要全局的 `$` 或 `jQuery` 變量。`jquery-global.js` 確保這些插件能正常工作。
+</Note>
+
+## Vue 3 組件
+
+### 組件目錄結構
+
+```
+resources/js/components/
+├── PostingAutofill.vue        # 任官自動填充
+├── BiogNameAutocomplete.vue   # 人物姓名自動完成
+└── ...
+```
+
+### 在 app.js 中註冊組件
+
+```javascript resources/js/app.js
+import { createApp } from 'vue';
+import PostingAutofill from './components/PostingAutofill.vue';
+import BiogNameAutocomplete from './components/BiogNameAutocomplete.vue';
+
+const app = createApp({});
+
+// 註冊全局組件
+app.component('posting-autofill', PostingAutofill);
+app.component('biog-name-autocomplete', BiogNameAutocomplete);
+
+app.mount('#app');
+```
+
+### 在 Blade 模板中使用
+
+```blade
+<!-- resources/views/layouts/dashboard-v3.blade.php -->
+<!DOCTYPE html>
+<html>
+<head>
+    @vite(['resources/js/app.js', 'resources/js/datatables.js'])
+</head>
+<body>
+    <div id="app">
+        <!-- 使用 Vue 組件 -->
+        <posting-autofill 
+            :person-id="{{ $personId }}"
+            :initial-data="{{ json_encode($data) }}"
+        ></posting-autofill>
+    </div>
+</body>
+</html>
+```
+
+## AdminLTE 3 界面
+
+### 佈局文件
+
+全站使用統一的 AdminLTE 3 佈局：
+
+```blade resources/views/layouts/dashboard-v3.blade.php
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>@yield('title') - CBDB Online</title>
+    
+    <!-- 通過 Vite 載入資源 -->
+    @vite(['resources/js/app.js', 'resources/js/datatables.js'])
+</head>
+<body class="hold-transition sidebar-mini">
+    <div class="wrapper">
+        <!-- Navbar -->
+        @include('partials.navbar-v3')
+        
+        <!-- Sidebar -->
+        @include('partials.sidebar-v3')
+        
+        <!-- Content -->
+        <div class="content-wrapper">
+            @yield('content')
+        </div>
+        
+        <!-- Footer -->
+        @include('partials.footer-v3')
+    </div>
+</body>
+</html>
+```
+
+<Warning>
+**不要引入外部 CDN**
+
+請勿在頁面中引入外部 CDN 的 jQuery/Bootstrap/DataTables，以免與 Vite bundle 產生版本衝突。
+
+所有依賴都應該通過 npm 安裝並在 `app.js` 中導入。
+</Warning>
+
+### AdminLTE 3 組件
+
+AdminLTE 3 提供了豐富的 UI 組件：
+
+```blade
+<!-- Card -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">標題</h3>
+    </div>
+    <div class="card-body">
+        內容
+    </div>
+</div>
+
+<!-- Button -->
+<button class="btn btn-primary">主要按鈕</button>
+<button class="btn btn-success">成功按鈕</button>
+
+<!-- Alert -->
+<div class="alert alert-info">
+    <i class="icon fas fa-info"></i> 提示訊息
+</div>
+```
+
+參考 [AdminLTE 3 文檔](https://adminlte.io/docs/3.0/) 查看所有可用組件。
+
+## DataTables 插件
+
+### 獨立入口文件
+
+DataTables 功能分離到獨立的入口文件 `resources/js/datatables.js`：
+
+```javascript resources/js/datatables.js
+import 'datatables.net-bs4/css/dataTables.bootstrap4.min.css';
+import 'datatables.net-bs4';
+
+// DataTables 初始化邏輯
+$(document).ready(function() {
+    $('.datatable').DataTable({
+        // 配置...
+    });
+});
+```
+
+### 在 Blade 中使用
+
+```blade
+@extends('layouts.dashboard-v3')
+
+@section('content')
+<table class="table table-bordered datatable">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>姓名</th>
+            <th>操作</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach($users as $user)
+        <tr>
+            <td>{{ $user->id }}</td>
+            <td>{{ $user->name }}</td>
+            <td><a href="#">編輯</a></td>
+        </tr>
+        @endforeach
+    </tbody>
+</table>
+@endsection
+```
+
+## Select2 插件
+
+Select2 已整合到 `app.js`，使用 Bootstrap 4 主題：
+
+```javascript
+// 已在 app.js 中設置默認主題
+$.fn.select2.defaults.set('theme', 'bootstrap4');
+```
+
+### 基本用法
+
+```blade
+<select class="form-control select2" name="user_id">
+    <option value="">請選擇...</option>
+    @foreach($users as $user)
+        <option value="{{ $user->id }}">{{ $user->name }}</option>
+    @endforeach
+</select>
+
+<script>
+$(document).ready(function() {
+    $('.select2').select2();
+});
+</script>
+```
+
+### AJAX 搜索
+
+```javascript
+$('.person-select').select2({
+    ajax: {
+        url: '/api/persons/search',
+        dataType: 'json',
+        delay: 250,
+        data: function (params) {
+            return {
+                q: params.term,
+                page: params.page || 1
+            };
+        },
+        processResults: function (data) {
+            return {
+                results: data.items,
+                pagination: {
+                    more: data.has_more
+                }
+            };
+        }
+    },
+    minimumInputLength: 2
+});
+```
+
+## 前端依賴問題排查
+
+如果 `npm run dev` 或 `npm run build` 出現錯誤（如 `error code ELIFECYCLE`），可嘗試以下步驟：
+
+<Steps>
+  <Step title="清理並重裝依賴">
+    ```bash
+    rm -rf node_modules
+    npm cache clear --force
+    npm install
+    ```
+  </Step>
+  
+  <Step title="重新執行構建">
+    ```bash
+    npm run dev    # 開發環境
+    # 或
+    npm run build  # 生產環境
+    ```
+  </Step>
+</Steps>
+
+<Note>
+**說明**：
+
+- `rm -rf node_modules` - 刪除所有已安裝的依賴
+- `npm cache clear --force` - 清除 npm 緩存
+- `npm install` - 根據 `package-lock.json` 重新安裝依賴
+
+⚠️ 一般情況下**不需要**刪除 `package-lock.json`，該檔案確保依賴版本一致性。
+</Note>
+
+## package.json 依賴說明
+
+```json package.json
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "prod": "vite build"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.2",
+    "@vue/compiler-sfc": "^3.5.12",
+    "laravel-vite-plugin": "^2.0.1",
+    "vite": "^7.2.4",
+    "vue": "^3.0.0"
+  },
+  "dependencies": {
+    "admin-lte": "^3.2.0",
+    "datatables.net": "^1.13.8",
+    "datatables.net-bs4": "^2.3.5",
+    "@ttskch/select2-bootstrap4-theme": "^1.5.2"
+  },
+  "engines": {
+    "node": ">=22 <23",
+    "npm": ">=10 <11"
+  }
+}
+```
+
+## 提交前檢查清單
+
+<Steps>
+  <Step title="代碼格式化">
+    ```bash
+    ./vendor/bin/php-cs-fixer fix
+    ```
+  </Step>
+  
+  <Step title="測試驗證">
+    ```bash
+    ./vendor/bin/phpunit
+    ```
+  </Step>
+  
+  <Step title="前端編譯">
+    ```bash
+    npm run build
+    ```
+    ⚠️ **如果修改了 Vue/JS/SCSS，此步驟必須執行！**
+  </Step>
+  
+  <Step title="檢查 Git 變更">
+    ```bash
+    git status
+    git diff
+    ```
+    確認 `public/build/` 中的編譯文件已更新。
+  </Step>
+</Steps>
+
+## 參考資料
+
+<CardGroup cols={2}>
+  <Card title="Vite 官方文檔" icon="bolt" href="https://vitejs.dev/">
+    現代前端構建工具文檔
+  </Card>
+  <Card title="Vue 3 文檔" icon="vuejs" href="https://vuejs.org/">
+    漸進式 JavaScript 框架
+  </Card>
+  <Card title="AdminLTE 3 文檔" icon="palette" href="https://adminlte.io/docs/3.0/">
+    Bootstrap 4 管理模板
+  </Card>
+  <Card title="AGENTS.md" icon="robot" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/main/AGENTS.md">
+    AI 代理開發指南
+  </Card>
+</CardGroup>

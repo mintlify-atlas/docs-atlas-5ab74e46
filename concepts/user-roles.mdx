@@ -1,0 +1,447 @@
+---
+title: User Roles & Permissions
+description: Understanding the CBDB user role system including regular users, experts, crowdsourcing contributors, and super-admins
+---
+
+## Overview
+
+CBDB Online implements a role-based permission system that controls user access to data modification, administrative functions, and review workflows. The system uses two database fields in the `users` table to determine permissions:
+
+- **`is_active`** - Account activation status (0=inactive, 1=active, 2=reserved)
+- **`is_admin`** - Role level (0=regular, 1=expert, 2=crowdsourcing, 3=super-admin)
+
+<Note>
+Only users with `is_active = 1` can perform write operations. The role determines *what* they can do.
+</Note>
+
+## Account Activation Status
+
+The `is_active` field controls whether a user can make changes to the database:
+
+| Value | Status | Description | Behavior |
+|-------|--------|-------------|----------|
+| `0` | Inactive | Default state, pending approval or suspended | Can log in but all write operations are rejected |
+| `1` | Active | Fully activated account | Can perform actions according to role permissions |
+| `2` | Reserved | Historical status for email confirmation | Currently treated as inactive |
+
+### Status Constants
+
+```php
+use App\Models\User;
+
+User::STATUS_INACTIVE  // 0
+User::STATUS_ACTIVE    // 1
+User::STATUS_RESERVED  // 2
+```
+
+## User Roles
+
+### Role Hierarchy
+
+<Steps>
+  <Step title="Regular User (一般)">
+    **Value**: `0` / `User::ROLE_REGULAR`
+    
+    Can directly modify data in `/basicinformation`, `/codes`, and other modules when active.
+  </Step>
+  
+  <Step title="Expert User (專家)">
+    **Value**: `1` / `User::ROLE_EXPERT`
+    
+    All regular user permissions plus:
+    - Manage user accounts via `/manage`
+    - Review and approve proposals in `/operations`
+    - Execute operation restoration
+    - Access administrative tools like `/merge-preview`
+  </Step>
+  
+  <Step title="Crowdsourcing User (眾包)">
+    **Value**: `2` / `User::ROLE_CROWDSOURCING`
+    
+    Can edit forms but submissions create proposals (operations with `crowdsourcing_status = 2`) that require expert review before being applied to the database.
+  </Step>
+  
+  <Step title="Super Admin (系統管理員)">
+    **Value**: `3` / `User::ROLE_SUPER_ADMIN`
+    
+    Currently has the same permissions as Expert users. Identified by `isAdmin()` method. Reserved for future higher-level administrative functions.
+  </Step>
+</Steps>
+
+### Role Constants
+
+```php
+use App\Models\User;
+
+User::ROLE_REGULAR        // 0
+User::ROLE_EXPERT         // 1
+User::ROLE_CROWDSOURCING  // 2
+User::ROLE_SUPER_ADMIN    // 3
+```
+
+## Permission Matrix
+
+<Card title="Feature Access by Role">
+
+| Action | Regular | Expert | Crowdsourcing | Super Admin |
+|--------|---------|--------|---------------|-------------|
+| **Basic Operations** | | | | |
+| Edit `/basicinformation` | ✅ Direct write | ✅ Direct write | 📝 Proposal only | ✅ Direct write |
+| Edit `/codes` tables | ✅ Direct write | ✅ Direct write | 📝 Proposal only | ✅ Direct write |
+| View operations log | ✅ | ✅ | ✅ | ✅ |
+| **Administrative** | | | | |
+| Review proposals in `/operations` | ❌ | ✅ | ❌ | ✅ |
+| Restore operations | ❌ | ✅ | ❌ | ✅ |
+| Manage users in `/manage` | ❌ | ✅ | ❌ | ✅ |
+| Access `/merge-preview` | ❌ | ✅ | ❌ | ✅ |
+| Confirm crowdsourcing proposals | ❌ | ✅ | ❌ | ✅ |
+| Run batch import | ❌ | ✅ | ❌ | ✅ |
+
+</Card>
+
+<Note>
+✅ = Allowed  |  ❌ = Denied  |  📝 = Creates proposal for review
+</Note>
+
+## User Model Helper Methods
+
+The `User` model (`app/Models/User.php`) provides helper methods to simplify permission checks:
+
+### Role Check Methods
+
+```php
+use Illuminate\Support\Facades\Auth;
+
+$user = Auth::user();
+
+// Check activation status
+$user->isActive();              // true if is_active == 1
+
+// Check specific roles
+$user->isRegularUser();         // true if is_admin == 0
+$user->isExpert();              // true if is_admin == 1
+$user->isCrowdsourcingUser();   // true if is_admin == 2
+$user->isSuperAdmin();          // true if is_admin == 3
+
+// Check if user has any admin role
+$user->isAdmin();               // true if Expert OR Super Admin (1 or 3)
+```
+
+### Permission Check Methods
+
+```php
+// Check specific capabilities
+$user->canManageUsers();         // Active AND (Expert OR Super Admin)
+$user->canRestoreOperations();   // Active AND (Expert OR Super Admin)
+$user->canWriteDirectly();       // Active AND NOT Crowdsourcing
+$user->canRunBatchImport();      // Active AND (Expert OR Super Admin)
+
+// Get role name in Chinese
+$roleName = $user->getRoleName(); // Returns: '一般', '專家', '眾包', '系統管理員'
+```
+
+### Usage Examples
+
+<CodeGroup>
+
+```php Controller Authorization
+// In a controller
+public function update(Request $request, $id) {
+    if (!Auth::user()->canWriteDirectly()) {
+        flash('您沒有權限直接修改數據。', 'error');
+        return redirect()->back();
+    }
+    
+    // Proceed with update...
+}
+```
+
+```php Blade Template
+<!-- In a Blade view -->
+@if(Auth::user()->canManageUsers())
+    <a href="{{ route('manage.index') }}">
+        管理用戶
+    </a>
+@endif
+
+@if(Auth::user()->isExpert())
+    <div class="expert-tools">
+        <!-- Expert-only features -->
+    </div>
+@endif
+```
+
+```php Old vs New Code
+// ❌ Old style with magic numbers
+if (Auth::user()->is_active == 1 && Auth::user()->is_admin == 1) {
+    // ...
+}
+
+// ✅ Better: Use constants
+if (Auth::user()->is_active == User::STATUS_ACTIVE && 
+    Auth::user()->is_admin == User::ROLE_EXPERT) {
+    // ...
+}
+
+// ✅✅ Best: Use helper methods
+if (Auth::user()->canManageUsers()) {
+    // ...
+}
+```
+
+</CodeGroup>
+
+## Crowdsourcing Workflow
+
+<Steps>
+  <Step title="Crowdsourcing User Submits Edit">
+    When a crowdsourcing user edits data, the controller detects `is_admin == 2` and creates an `operations` record with `crowdsourcing_status = 2` instead of writing to the main table.
+  </Step>
+  
+  <Step title="Proposal Stored">
+    The proposal is visible in `/operations` with "待審核" (pending review) status.
+  </Step>
+  
+  <Step title="Expert Reviews">
+    An expert or super admin reviews the proposal:
+    - **Approve**: Changes are applied to the database, status changes to `crowdsourcing_status = 1`
+    - **Reject**: Status changes to `crowdsourcing_status = 3`, no data modification
+  </Step>
+  
+  <Step title="Audit Trail">
+    All proposals and their review outcomes are preserved in the `operations` table.
+  </Step>
+</Steps>
+
+### Crowdsourcing Status Codes
+
+| Value | Status | Meaning |
+|-------|--------|--------|
+| `0` | Professional | Direct modification by regular/expert/super-admin user |
+| `1` | Applied | Crowdsourcing proposal approved and applied |
+| `2` | Pending | Crowdsourcing proposal awaiting review |
+| `3` | Rejected | Crowdsourcing proposal rejected |
+| `4` | Failed | Crowdsourcing proposal application failed |
+
+## User Management
+
+### Command-Line Tool
+
+Create and manage users via Artisan command:
+
+```bash
+# Interactive mode
+php artisan cbdb:manage-user
+
+# Command-line options mode
+php artisan cbdb:manage-user \
+  --email=admin@example.com \
+  --name="Administrator" \
+  --password=secret123 \
+  --active=1 \
+  --role=super-admin
+
+# List all users
+php artisan cbdb:manage-user --list
+
+# Update existing user role
+php artisan cbdb:manage-user \
+  --email=user@example.com \
+  --role=expert
+```
+
+#### Available Role Options
+
+- `regular` - Regular user (0)
+- `expert` - Expert user (1)
+- `crowdsourcing` - Crowdsourcing contributor (2)
+- `super-admin` - Super administrator (3)
+
+### Web Interface
+
+Experts and super admins can manage users via `/manage`:
+
+<CardGroup cols={2}>
+  <Card title="View Users" icon="users">
+    List all users with their roles, activation status, and registration dates
+  </Card>
+  
+  <Card title="Edit Users" icon="user-pen">
+    Change user roles, activation status, and other account details
+  </Card>
+  
+  <Card title="Activate/Suspend" icon="user-check">
+    Toggle `is_active` status to enable or disable user accounts
+  </Card>
+  
+  <Card title="Role Management" icon="user-shield">
+    Promote users to expert or change roles as needed
+  </Card>
+</CardGroup>
+
+## Testing with User Roles
+
+### Using User Factory
+
+The `UserFactory` provides convenient methods for creating test users:
+
+```php
+use App\Models\User;
+
+// Create active super admin
+$admin = User::factory()->active()->superAdmin()->create();
+
+// Create active expert
+$expert = User::factory()->active()->expert()->create();
+
+// Create crowdsourcing user
+$crowdsourcing = User::factory()->active()->crowdsourcing()->create();
+
+// Create inactive regular user
+$inactive = User::factory()->inactive()->regular()->create();
+
+// Combine states
+$activeExpert = User::factory()->active()->expert()->create([
+    'email' => 'expert@test.com',
+    'name' => 'Test Expert'
+]);
+```
+
+### Testing Permission Logic
+
+```php
+use Tests\TestCase;
+use App\Models\User;
+
+class PermissionTest extends TestCase
+{
+    public function test_only_active_users_can_write_data()
+    {
+        $inactiveUser = User::factory()->inactive()->create();
+        
+        $this->assertFalse($inactiveUser->canWriteDirectly());
+    }
+    
+    public function test_experts_can_manage_users()
+    {
+        $expert = User::factory()->active()->expert()->create();
+        
+        $this->assertTrue($expert->canManageUsers());
+    }
+    
+    public function test_crowdsourcing_users_cannot_write_directly()
+    {
+        $crowdsourcing = User::factory()
+            ->active()
+            ->crowdsourcing()
+            ->create();
+        
+        $this->assertFalse($crowdsourcing->canWriteDirectly());
+    }
+}
+```
+
+## Controller Implementation
+
+Typical permission check pattern in controllers:
+
+```php
+use Illuminate\Support\Facades\Auth;
+use App\Models\User;
+
+class BiogMainController extends Controller
+{
+    public function update(Request $request, $personId)
+    {
+        $user = Auth::user();
+        
+        // Check if user is active
+        if (!$user->isActive()) {
+            flash('帳號未啟用，無法進行操作。', 'error');
+            return redirect()->back();
+        }
+        
+        // Crowdsourcing users create proposals instead
+        if ($user->isCrowdsourcingUser()) {
+            return $this->createProposal($request, $personId);
+        }
+        
+        // Regular, expert, and super-admin users can write directly
+        if ($user->canWriteDirectly()) {
+            return $this->updateDirectly($request, $personId);
+        }
+        
+        flash('權限不足。', 'error');
+        return redirect()->back();
+    }
+    
+    private function createProposal(Request $request, $personId)
+    {
+        // Create operation record with crowdsourcing_status = 2
+        // ...
+    }
+    
+    private function updateDirectly(Request $request, $personId)
+    {
+        // Write to database and log operation
+        // ...
+    }
+}
+```
+
+## Future Development: Super Admin
+
+The super admin role (`User::ROLE_SUPER_ADMIN = 3`) is fully implemented at the model level but currently has the same permissions as expert users.
+
+### To Add Super Admin Exclusive Features
+
+Use the `isSuperAdmin()` method for super-admin-only actions:
+
+```php
+// Controller example
+if (!Auth::user()->isSuperAdmin()) {
+    flash('該功能僅限系統管理員使用。', 'error');
+    return redirect()->back();
+}
+
+// Blade example
+@if(Auth::user()->isSuperAdmin())
+    <div class="super-admin-panel">
+        <!-- Super admin only features -->
+    </div>
+@endif
+```
+
+<Tip>
+When migrating existing permission checks:
+- Use `isAdmin()` for features available to both experts and super admins
+- Use `isExpert()` for expert-only features
+- Use `isSuperAdmin()` for super-admin-only features
+</Tip>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Helper Methods" icon="wand-magic-sparkles">
+    Always use `canManageUsers()`, `isAdmin()`, etc. instead of checking `is_admin` directly
+  </Card>
+  
+  <Card title="Check Active Status" icon="user-check">
+    Always verify `isActive()` before checking role permissions
+  </Card>
+  
+  <Card title="Use Constants" icon="hashtag">
+    Use `User::ROLE_EXPERT` instead of magic number `1`
+  </Card>
+  
+  <Card title="Test All Roles" icon="vial">
+    Write tests covering each role's permissions and restrictions
+  </Card>
+</CardGroup>
+
+## See Also
+
+- [Operations Audit](/concepts/operations-audit) - How user actions are logged
+- [Data Model](/concepts/data-model) - Database schema including users table
+- USER_PRIVILEGES.md (source) - Complete permission documentation
+- AGENTS.md (source) - User management in development workflow

@@ -1,0 +1,559 @@
+---
+title: Database Compatibility
+description: Principles and practices for maintaining MySQL/SQLite compatibility in CBDB Online
+icon: check-double
+---
+
+## Overview
+
+CBDB Online maintains strict database compatibility between MySQL/MariaDB (production) and SQLite (testing). This ensures reliable tests, flexible deployments, and future migration options.
+
+<Note>
+  **Core Principle**: Write database-agnostic code that works across MySQL/MariaDB and SQLite without modification.
+</Note>
+
+## Why Database Compatibility?
+
+<CardGroup cols={2}>
+  <Card title="Testing Efficiency" icon="flask">
+    SQLite in-memory databases make tests **100x faster** than MySQL
+    
+    No external database service needed
+  </Card>
+  
+  <Card title="CI/CD Simplicity" icon="robot">
+    Automated tests run instantly without database setup
+    
+    Reduces infrastructure complexity
+  </Card>
+  
+  <Card title="Future Flexibility" icon="arrows-turn-to-dots">
+    Easy migration to PostgreSQL, MySQL 8.x, or other databases
+    
+    No vendor lock-in
+  </Card>
+  
+  <Card title="Developer Experience" icon="laptop-code">
+    Consistent behavior across all environments
+    
+    Tests match production behavior
+  </Card>
+</CardGroup>
+
+## Core Compatibility Principles
+
+### ✅ Recommended Practices
+
+<Tabs>
+  <Tab title="1. Use Laravel Schema Builder">
+    Laravel's Schema Builder automatically handles most compatibility issues:
+    
+    ```php
+    // ✅ Good: Schema Builder handles differences automatically
+    Schema::create('users', function (Blueprint $table) {
+        $table->id();                    // Works on both databases
+        $table->string('name');          // VARCHAR in MySQL, TEXT in SQLite
+        $table->timestamps();            // Correct timestamp handling
+        $table->index('name');           // Compatible index creation
+    });
+    ```
+  </Tab>
+  
+  <Tab title="2. Use Standard SQL">
+    Stick to SQL features supported by both databases:
+    
+    ```sql
+    -- ✅ Good: Standard SQL
+    SELECT * FROM users 
+    WHERE name LIKE 'John%'
+    ORDER BY created_at DESC;
+    
+    -- ❌ Bad: MySQL-specific REGEXP
+    SELECT * FROM users 
+    WHERE name REGEXP '^[A-Z]';
+    ```
+  </Tab>
+  
+  <Tab title="3. Use Query Builder">
+    Laravel's Query Builder provides database abstraction:
+    
+    ```php
+    // ✅ Good: Query Builder
+    DB::table('users')
+        ->where('name', 'like', 'John%')
+        ->orderBy('created_at', 'desc')
+        ->get();
+    
+    // ❌ Bad: Raw SQL with database-specific syntax
+    DB::select("SELECT * FROM users WHERE name REGEXP '^[A-Z]'");
+    ```
+  </Tab>
+  
+  <Tab title="4. Use Helper Functions">
+    Use project-provided helper functions for compatibility:
+    
+    ```php
+    // ✅ Good: Use helpers
+    if (is_mysql()) {
+        DB::statement("ALTER TABLE users ENGINE=InnoDB");
+    }
+    
+    // ❌ Bad: Direct driver check
+    if (DB::getDriverName() === 'mysql') {
+        // ...
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### ❌ Avoid These Patterns
+
+<Warning>
+  The following features are **database-specific** and should be avoided:
+</Warning>
+
+<AccordionGroup>
+  <Accordion title="Database-Specific Functions">
+    ```sql
+    -- ❌ MySQL-specific functions
+    SELECT JSON_EXTRACT(data, '$.key') FROM table;
+    SELECT * FROM users WHERE name REGEXP '^[A-Z]';
+    
+    -- ❌ SQLite-specific functions
+    SELECT datetime('now');
+    
+    -- ✅ Use Laravel/PHP instead
+    // Handle JSON in application layer
+    $data = json_decode($record->data);
+    $value = $data->key;
+    ```
+  </Accordion>
+  
+  <Accordion title="Full-Text Search">
+    ```sql
+    -- ❌ MySQL FULLTEXT (different syntax across databases)
+    CREATE FULLTEXT INDEX idx_name ON users(name) WITH PARSER ngram;
+    
+    -- ✅ Use application-layer search instead
+    // Elasticsearch, Meilisearch, or Algolia
+    ```
+  </Accordion>
+  
+  <Accordion title="Generated Columns">
+    ```sql
+    -- ❌ MySQL-specific generated columns
+    ALTER TABLE users
+    ADD COLUMN full_name VARCHAR(255)
+    GENERATED ALWAYS AS (CONCAT(first_name, ' ', last_name));
+    
+    -- ✅ Use Eloquent accessors instead
+    public function getFullNameAttribute() {
+        return $this->first_name . ' ' . $this->last_name;
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Vendor-Specific Storage Engines">
+    ```sql
+    -- ❌ MySQL-specific storage engines
+    CREATE TABLE logs (...) ENGINE=ARCHIVE;
+    
+    -- ✅ Use standard InnoDB or let Laravel decide
+    Schema::create('logs', function (Blueprint $table) {
+        // Laravel handles storage engine
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Helper Functions Reference
+
+The project provides helper functions in `database/migrations/helpers.php`:
+
+### is_mysql()
+
+Check if the current database is MySQL/MariaDB:
+
+```php
+if (is_mysql()) {
+    // MySQL/MariaDB specific operations
+    DB::statement("ALTER TABLE users ENGINE=InnoDB ROW_FORMAT=DYNAMIC");
+}
+```
+
+### is_sqlite()
+
+Check if the current database is SQLite:
+
+```php
+if (is_sqlite()) {
+    // Remove SQLite-unsupported syntax
+    $sql = preg_replace('/COMMENT\\s+\'[^\']*\'/i', '', $sql);
+    $sql = preg_replace('/ENGINE\\s*=\\s*[a-zA-Z0-9_]+/i', '', $sql);
+}
+```
+
+### disable_foreign_keys() / enable_foreign_keys()
+
+Temporarily disable foreign key checks:
+
+```php
+disable_foreign_keys();
+
+try {
+    // Operations that modify foreign key relationships
+    Schema::table('posts', function (Blueprint $table) {
+        $table->unsignedBigInteger('user_id')->change();
+    });
+} finally {
+    enable_foreign_keys();  // Always re-enable
+}
+```
+
+### get_current_timestamp_sql()
+
+Get database-specific current timestamp SQL:
+
+```php
+$timestamp = get_current_timestamp_sql();
+// Returns 'NOW()' for MySQL, "datetime('now')" for SQLite
+
+// But prefer Laravel's now() function
+DB::table('users')->update(['last_login' => now()]);
+```
+
+## Syntax Differences
+
+### Key Differences Between MySQL and SQLite
+
+<Tabs>
+  <Tab title="COMMENT">
+    **MySQL**: Supports column and table comments
+    
+    ```sql
+    CREATE TABLE users (
+        id INT COMMENT 'User ID'
+    ) COMMENT='User table';
+    ```
+    
+    **SQLite**: Does not support COMMENT
+    
+    **Solution**: Remove COMMENT clauses for SQLite
+    
+    ```php
+    if (is_sqlite()) {
+        $sql = preg_replace('/COMMENT\\s+\'[^\']*\'/i', '', $sql);
+    }
+    ```
+  </Tab>
+  
+  <Tab title="ENGINE">
+    **MySQL**: Supports storage engine specification
+    
+    ```sql
+    CREATE TABLE users (...) ENGINE=InnoDB;
+    ```
+    
+    **SQLite**: Does not support ENGINE
+    
+    **Solution**: Conditionally apply ENGINE only for MySQL
+    
+    ```php
+    if (is_mysql()) {
+        DB::statement("ALTER TABLE users ENGINE=InnoDB");
+    }
+    ```
+  </Tab>
+  
+  <Tab title="AUTO_INCREMENT">
+    **MySQL**: Uses AUTO_INCREMENT
+    
+    ```sql
+    CREATE TABLE users (
+        id INT AUTO_INCREMENT PRIMARY KEY
+    );
+    ```
+    
+    **SQLite**: Uses AUTOINCREMENT
+    
+    **Solution**: Use Laravel Schema Builder
+    
+    ```php
+    $table->id();  // Laravel handles the difference
+    ```
+  </Tab>
+  
+  <Tab title="UNSIGNED">
+    **MySQL**: Supports UNSIGNED integers
+    
+    ```sql
+    CREATE TABLE users (
+        id INT UNSIGNED
+    );
+    ```
+    
+    **SQLite**: Does not enforce UNSIGNED (ignores it)
+    
+    **Solution**: Use Laravel Schema Builder
+    
+    ```php
+    $table->unsignedInteger('id');  // Works on both
+    ```
+  </Tab>
+</Tabs>
+
+## Index Compatibility
+
+### B-Tree Indexes (Recommended)
+
+<Card title="Universally Compatible" icon="check">
+  B-Tree indexes work on all database systems:
+  
+  ```php
+  Schema::table('users', function (Blueprint $table) {
+      $table->index('name');                      // Single column
+      $table->index(['last_name', 'first_name']); // Composite
+      $table->unique('email');                    // Unique
+  });
+  ```
+</Card>
+
+### Index Type Hints
+
+```sql
+-- ❌ Avoid: Database-specific index hints
+CREATE INDEX idx_name ON users(name) USING BTREE;
+CREATE INDEX idx_name ON users(name) USING HASH;
+
+-- ✅ Good: Let Laravel/database decide
+CREATE INDEX idx_name ON users(name);
+```
+
+### Full-Text Indexes
+
+<Warning>
+  Full-text search syntax differs significantly across databases. Use application-layer search instead.
+</Warning>
+
+```sql
+-- ❌ MySQL FULLTEXT
+CREATE FULLTEXT INDEX idx_name ON users(name);
+
+-- ❌ PostgreSQL ts_vector
+CREATE INDEX idx_name ON users USING gin(to_tsvector('english', name));
+
+-- ✅ Use Elasticsearch, Meilisearch, or Algolia instead
+```
+
+## Query Optimization
+
+### Index-Friendly Queries
+
+<Tabs>
+  <Tab title="✅ Efficient">
+    ```php
+    // Prefix matching: Uses B-Tree index
+    DB::table('users')
+        ->where('name', 'like', 'John%')
+        ->get();
+    
+    // Equality: Uses index
+    DB::table('users')
+        ->where('name', 'John')
+        ->get();
+    ```
+  </Tab>
+  
+  <Tab title="❌ Inefficient">
+    ```php
+    // Middle matching: Cannot use B-Tree index
+    DB::table('users')
+        ->where('name', 'like', '%John%')
+        ->get();
+    
+    // Use application-layer search for these cases
+    ```
+  </Tab>
+</Tabs>
+
+### Composite Index Usage
+
+<Note>
+  Queries must include the **leading columns** of a composite index to use it.
+</Note>
+
+Example: Index on `['last_name', 'first_name']`
+
+```php
+// ✅ Can use index
+DB::table('users')
+    ->where('last_name', 'Smith')
+    ->get();
+
+// ✅ Can use index
+DB::table('users')
+    ->where('last_name', 'Smith')
+    ->where('first_name', 'John')
+    ->get();
+
+// ❌ Cannot use index (skips leading column)
+DB::table('users')
+    ->where('first_name', 'John')
+    ->get();
+```
+
+## JSON Handling
+
+<Warning>
+  JSON query syntax differs significantly across databases. Use with caution.
+</Warning>
+
+```php
+// ✅ Basic JSON storage is safe
+Schema::create('configs', function (Blueprint $table) {
+    $table->json('settings');  // Works on both databases
+});
+
+// ✅ Basic storage and retrieval
+DB::table('configs')->insert([
+    'settings' => json_encode(['theme' => 'dark'])
+]);
+
+$config = DB::table('configs')->first();
+$settings = json_decode($config->settings);
+
+// ❌ Avoid complex JSON queries (syntax differs)
+// MySQL:  JSON_EXTRACT(settings, '$.theme')
+// PostgreSQL: settings->>'theme'
+// SQLite: json_extract(settings, '$.theme')
+
+// ✅ Better: Extract frequently queried fields to columns
+Schema::table('configs', function (Blueprint $table) {
+    $table->string('theme', 50)->nullable();
+});
+```
+
+## Testing Strategy
+
+### In-Memory SQLite Tests
+
+<Tip>
+  All PHPUnit tests use SQLite in-memory databases by default for maximum speed.
+</Tip>
+
+```php
+protected function setUp(): void {
+    parent::setUp();
+    
+    // Configure SQLite in-memory
+    config()->set('database.default', 'sqlite');
+    config()->set('database.connections.sqlite.database', ':memory:');
+    
+    // Create minimal schema for test
+    Schema::create('users', function (Blueprint $table) {
+        $table->id();
+        $table->string('name');
+        $table->timestamps();
+    });
+}
+```
+
+### Testing Both Databases
+
+```bash
+# Test on SQLite (default)
+vendor/bin/phpunit
+
+# Test migrations on SQLite
+php artisan migrate:fresh --database=sqlite
+
+# Test on MySQL
+php artisan migrate:fresh
+vendor/bin/phpunit --configuration phpunit-mysql.xml
+```
+
+## Real-World Example
+
+Here's how the baseline migration handles compatibility:
+
+```php
+// From: database/migrations/2025_01_01_000000_import_cbdb_schema.php
+
+public function up(): void {
+    disable_foreign_keys();
+    
+    $statements = $this->extractCreateStatements($this->schemaSql());
+    
+    foreach ($statements as $table => $statement) {
+        if (Schema::hasTable($table)) {
+            continue;
+        }
+        
+        if (is_sqlite()) {
+            // Remove MySQL-specific syntax for SQLite
+            $statement = $this->sanitizeForSqlite($statement);
+        }
+        
+        DB::statement($statement);
+    }
+    
+    enable_foreign_keys();
+}
+
+protected function sanitizeForSqlite(string $sql): string {
+    // Remove COMMENT clauses
+    $sql = preg_replace('/COMMENT\\s+\'[^\']*\'/i', '', $sql);
+    
+    // Remove ENGINE specifications
+    $sql = preg_replace('/ENGINE\\s*=\\s*[a-zA-Z0-9_]+/i', '', $sql);
+    
+    // Remove ROW_FORMAT specifications
+    $sql = preg_replace('/ROW_FORMAT\\s*=\\s*[a-zA-Z0-9_]+/i', '', $sql);
+    
+    // Remove index type hints
+    $sql = preg_replace('/USING\\s+BTREE/i', '', $sql);
+    
+    return $sql;
+}
+```
+
+## Quick Reference
+
+<CardGroup cols={2}>
+  <Card title="✅ Always Compatible" icon="check">
+    - Laravel Schema Builder
+    - Standard SQL (SELECT, WHERE, JOIN)
+    - B-Tree indexes
+    - Basic JSON storage
+    - Query Builder methods
+  </Card>
+  
+  <Card title="❌ Database-Specific" icon="x">
+    - COMMENT clauses
+    - ENGINE specifications
+    - Full-text search
+    - Generated columns
+    - REGEXP queries
+    - Complex JSON queries
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card 
+    title="Database Migrations" 
+    icon="code" 
+    href="/database/migrations"
+  >
+    Learn how to write compatible migrations
+  </Card>
+  
+  <Card 
+    title="Database Schema" 
+    icon="table" 
+    href="/database/schema"
+  >
+    Explore CBDB database tables
+  </Card>
+</CardGroup>

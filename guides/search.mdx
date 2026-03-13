@@ -1,0 +1,309 @@
+---
+title: "Search"
+description: "Find people, places, and relationships using CBDB Online search features"
+icon: "magnifying-glass"
+---
+
+## Overview
+
+CBDB Online provides powerful search capabilities for finding historical people, places, offices, and relationships. The search system uses multiple strategies to handle Traditional Chinese characters, romanization, and partial name matching.
+
+## Person Search
+
+### Basic Search
+
+Search for people by name from the main biographical index:
+
+```
+URL: /basicinformation?q={search_term}
+```
+
+**Supported search methods**:
+- Chinese name (traditional characters)
+- Romanized name (Pinyin or Wade-Giles)
+- Partial name matching
+- Surname-only search
+
+### Search Index System
+
+CBDB Online uses a specialized **inverted index** (`CBDB__NAME_FTS`) for high-performance name searches:
+
+<Steps>
+  <Step title="Character tokenization">
+    Names are tokenized into individual characters and character pairs:
+    - "王安石" → ["王", "安", "石", "王安", "安石"]
+  </Step>
+  <Step title="Index lookup">
+    Search queries are matched against the inverted index to find candidate person IDs.
+  </Step>
+  <Step title="Ranking">
+    Results are ranked by:
+    - Exact matches (highest)
+    - Prefix matches
+    - Substring matches (lowest)
+  </Step>
+</Steps>
+
+<Note>
+The name search index is automatically updated when person names change. Administrators can rebuild the index using `php artisan cbdb:rebuild-name-index` if needed.
+</Note>
+
+### Search Examples
+
+<Tabs>
+  <Tab title="Exact Name">
+    ```
+    /basicinformation?q=王安石
+    ```
+    Finds people with exact name "王安石" (Wang Anshi).
+  </Tab>
+  <Tab title="Partial Name">
+    ```
+    /basicinformation?q=安石
+    ```
+    Finds people with names containing "安石".
+  </Tab>
+  <Tab title="Romanized">
+    ```
+    /basicinformation?q=Wang+Anshi
+    ```
+    Searches romanized name field.
+  </Tab>
+  <Tab title="With Dynasty Filter">
+    ```
+    /basicinformation?q=王安石&c_dy=15
+    ```
+    Finds "王安石" in Song Dynasty (c_dy=15).
+  </Tab>
+</Tabs>
+
+### Dynasty Faceting
+
+When a search query is provided, CBDB displays dynasty distribution:
+
+```php Dynasty facets
+// Automatically generated when q parameter present
+$dynastyFacets = BiogMainRepository::dynastyFacetsByQuery($q);
+
+// Returns:
+[
+    ['c_dy' => 15, 'dynasty_name' => '宋', 'count' => 42],
+    ['c_dy' => 16, 'dynasty_name' => '元', 'count' => 15],
+    ...
+]
+```
+
+This allows filtering search results by dynasty using the dropdown.
+
+## Place Search
+
+### Browse Places
+
+```
+URL: /codes/ADDR_CODES
+```
+
+Searchable fields:
+- `c_name_chn` (Chinese name)
+- `c_name` (Romanized name)
+
+### API Place Search
+
+Search places with time period filtering:
+
+```bash Search places
+curl "https://input.cbdb.fas.harvard.edu/api/place_list?name=%E6%99%AE%E6%B4%B2&accurate=1"
+```
+
+**Parameters**:
+- `name`: Place name (Chinese or English, URL-encoded)
+- `accurate`: `0` for exact match, `1` for fuzzy match (inverted from other endpoints!)
+- `startTime`: Optional start year
+- `endTime`: Optional end year
+- `start`: Result offset (pagination)
+- `list`: Number of results to return
+
+<Warning>
+For `/api/place_list`, the `accurate` parameter is **reversed**: `0` = exact match, `1` = fuzzy match. This is opposite from other API endpoints.
+</Warning>
+
+## Office Search
+
+### Browse Offices
+
+```
+URL: /codes/OFFICE_CODES
+```
+
+Searchable fields:
+- `c_office_name_chn` (Chinese name)
+- `c_office_name` (English name)
+- `c_office_chn_alt` (Alternative names)
+
+### API Office Search
+
+```bash Search offices
+curl "https://input.cbdb.fas.harvard.edu/api/office_list_by_name?pName=%E5%B0%9A%E6%9B%B8&accurate=0"
+```
+
+**Parameters**:
+- `pName`: Office name (Chinese or English, URL-encoded)
+- `accurate`: `0` for fuzzy match, `1` for exact match
+- `start`: Result offset
+- `list`: Number of results
+
+## Traditional-Simplified Character Mapping
+
+CBDB uses the `CBDB__TRAD_SIMP_MAP` table to handle character variants:
+
+<Accordion title="Character normalization">
+  The system normalizes variant characters before indexing:
+  - Traditional: 菴 (菴) → 庵 (庵)
+  - Variant: 敗 (敗) → 考 (考)
+  - Variant: 嶽 (嶽) → 岳 (岳)
+  
+  This ensures searches work regardless of which character variant is used.
+</Accordion>
+
+### Update Character Mapping
+
+```bash Import mapping
+php artisan cbdb:import-trad-simp-map --truncate
+```
+
+The mapping is based on OpenCC (Open Chinese Convert) standards.
+
+## Advanced Search Strategies
+
+### Suffix Matching
+
+The name search index supports **suffix matching** for Chinese names:
+
+```
+Query: 石
+Matches: 王安石, 李大石, 張小石, etc.
+```
+
+This is particularly useful for searching by generation name (輩分) or given name component.
+
+### Pinyin Conversion
+
+The system uses `App\Models\Pinyin` for Chinese-to-Pinyin conversion:
+
+```php Pinyin conversion
+use App\Models\Pinyin;
+
+$pinyin = Pinyin::trans('王安石');
+// Returns: "Wang An Shi"
+
+// With variant character normalization
+$normalized = VariantCharNormalizer::normalize('菴安石');
+$pinyin = Pinyin::trans($normalized);
+// 菴 → 庵, then converts to "An An Shi"
+```
+
+<Note>
+Variant character normalization is applied **before** Pinyin conversion to ensure correct romanization.
+</Note>
+
+## Query Performance
+
+### Index Strategy
+
+CBDB uses B-Tree indexes for optimal search performance:
+
+```sql Indexes
+-- BIOG_MAIN indexes
+CREATE INDEX idx_name_chn ON BIOG_MAIN(c_name_chn);
+CREATE INDEX idx_name ON BIOG_MAIN(c_name);
+CREATE INDEX idx_dy_indexyear ON BIOG_MAIN(c_dy, c_index_year);
+
+-- Name search inverted index
+CREATE INDEX idx_token ON CBDB__NAME_FTS(token);
+CREATE INDEX idx_personid ON CBDB__NAME_FTS(c_personid);
+```
+
+### Query Optimization
+
+<Tip>
+**Prefix searches** (`LIKE 'prefix%'`) use indexes efficiently.
+
+**Suffix searches** (`LIKE '%suffix'`) require the inverted index for performance.
+
+**Substring searches** (`LIKE '%substring%'`) are slower but supported.
+</Tip>
+
+## API Search Endpoints
+
+CBDB provides RESTful API endpoints for programmatic search:
+
+<CardGroup cols={2}>
+  <Card title="Search People by Name" icon="user" href="/api/name-search">
+    Find people using name search API
+  </Card>
+  <Card title="Search Offices" icon="building" href="/api/offices">
+    Query office codes by name or category
+  </Card>
+  <Card title="Search Places" icon="map" href="/api/places">
+    Find places with time period filtering
+  </Card>
+  <Card title="Search Entry Paths" icon="door-open" href="/api/entry-paths">
+    Query entry paths by name or category
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Search returns no results">
+    - Try different character variants (traditional vs simplified)
+    - Remove diacritics from romanized names
+    - Try partial name search (fewer characters)
+    - Check dynasty filter - may be too restrictive
+  </Accordion>
+  
+  <Accordion title="Search is slow">
+    - Name search index may need rebuilding: `php artisan cbdb:rebuild-name-index`
+    - Check database indexes: `SHOW INDEX FROM BIOG_MAIN`
+    - Large result sets: add dynasty or year filters to narrow results
+  </Accordion>
+  
+  <Accordion title="Character variant not found">
+    - Update traditional-simplified mapping: `php artisan cbdb:import-trad-simp-map --truncate`
+    - Submit new variant mappings to administrators
+  </Accordion>
+</AccordionGroup>
+
+## Search Best Practices
+
+<Steps>
+  <Step title="Start with full name">
+    Try complete Chinese name first for most accurate results.
+  </Step>
+  <Step title="Use partial matching">
+    If no exact match, try surname only or given name only.
+  </Step>
+  <Step title="Apply filters">
+    Use dynasty, time period, or place filters to narrow results.
+  </Step>
+  <Step title="Check alternative names">
+    Search ALTNAME_DATA for courtesy names, style names, or aliases.
+  </Step>
+</Steps>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Name Search Index" icon="database" href="/database/schema">
+    Learn about CBDB__NAME_FTS table
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Use search APIs programmatically
+  </Card>
+  <Card title="Code Tables" icon="table" href="/guides/code-tables">
+    Browse reference code tables
+  </Card>
+  <Card title="Character Mapping" icon="language" href="/database/schema">
+    Understand CBDB__TRAD_SIMP_MAP
+  </Card>
+</CardGroup>

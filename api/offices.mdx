@@ -1,0 +1,180 @@
+---
+title: 'Offices'
+description: 'Query office lists by category code or name'
+icon: 'building'
+---
+
+## Get Office List by Category Code
+
+Retrieve offices under a specific office category code.
+
+### Endpoint
+
+```bash
+GET /api/post_list
+```
+
+### Parameters
+
+<ParamField query="id" type="number" required>
+  Office category code
+</ParamField>
+
+<ParamField query="start" type="number">
+  Starting record number (default: 0)
+</ParamField>
+
+<ParamField query="list" type="number">
+  Number of records to return (default: all)
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+```bash Get first 100 Tang Dynasty offices
+curl "https://input.cbdb.fas.harvard.edu/api/post_list?id=06&start=0&list=100"
+```
+
+```bash Get next 100 records
+curl "https://input.cbdb.fas.harvard.edu/api/post_list?id=06&start=100&list=100"
+```
+
+```bash Get all offices in subcategory
+curl "https://input.cbdb.fas.harvard.edu/api/post_list?id=0601"
+```
+</CodeGroup>
+
+### Response
+
+<ResponseField name="total" type="number">
+  Total number of records
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting record number of current data
+</ResponseField>
+
+<ResponseField name="end" type="number">
+  Ending record number of current data
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of office objects
+  
+  <Expandable title="Office Object Properties">
+    <ResponseField name="pId" type="number">
+      Office ID (office_id)
+    </ResponseField>
+    
+    <ResponseField name="pName" type="string">
+      Office name in English
+    </ResponseField>
+    
+    <ResponseField name="pNameChn" type="string">
+      Office name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="pNameChnAlt" type="string">
+      Alternative Chinese office names (semicolon-separated)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+    "total": 100,
+    "start": 1,
+    "end": 2,
+    "data": [
+        {
+            "pId": "27",
+            "pName": "shang shu sheng gong bu shang shu",
+            "pNameChn": "尚書省工部尚書",
+            "pNameChnAlt": "工部尚書;尚書;工部一書;工書;冬卿;冬卿常伯"
+        },
+        {
+            "pId": "28",
+            "pName": "shang shu sheng gong bu shi lang",
+            "pNameChn": "尚書省工部侍郎",
+            "pNameChnAlt": "工部侍郎;工侍;小司空;司平少常伯;冬官之貳;共工之貳"
+        }
+    ]
+}
+```
+
+---
+
+## Search Offices by Name
+
+Search for offices by Chinese or English name with exact or partial matching.
+
+### Endpoint
+
+```bash
+GET /api/office_list_by_name
+```
+
+### Parameters
+
+<ParamField query="pName" type="string" required>
+  Office name (Chinese or English, URL-encoded)
+</ParamField>
+
+<ParamField query="start" type="number">
+  Starting record number
+</ParamField>
+
+<ParamField query="list" type="number">
+  Number of records to return
+</ParamField>
+
+<ParamField query="accurate" type="number">
+  Matching mode:
+  - `0`: Partial match (fuzzy search)
+  - `1`: Exact match
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+```bash Partial match search
+curl "https://input.cbdb.fas.harvard.edu/api/office_list_by_name?pName=%E5%B0%9A%E6%9B%B8%E7%9C%81%E5%B7%A5%E9%83%A8&start=1&list=2&accurate=0"
+```
+
+```bash Exact match search
+curl "https://input.cbdb.fas.harvard.edu/api/office_list_by_name?pName=%E5%B0%9A%E6%9B%B8%E7%9C%81%E5%B7%A5%E9%83%A8%E4%BE%8D%E9%83%8E&start=1&list=2&accurate=1"
+```
+</CodeGroup>
+
+<Note>
+The first example searches for all offices containing "尚書省工部" (partial match).  
+The second example searches for offices exactly named "尚書省工部侍郎" (exact match).
+</Note>
+
+### Response
+
+The response format is identical to the `/api/post_list` endpoint.
+
+```json
+{
+    "total": 100,
+    "start": 1,
+    "end": 2,
+    "data": [
+        {
+            "pId": "27",
+            "pName": "shang shu sheng gong bu shang shu",
+            "pNameChn": "尚書省工部尚書",
+            "pNameChnAlt": "工部尚書;尚書;工部一書;工書;冬卿;冬卿常伯"
+        },
+        {
+            "pId": "28",
+            "pName": "shang shu sheng gong bu shi lang",
+            "pNameChn": "尚書省工部侍郎",
+            "pNameChnAlt": "工部侍郎;工侍;小司空;司平少常伯;冬官之貳;共工之貳"
+        }
+    ]
+}
+```

@@ -1,0 +1,285 @@
+---
+title: Database Overview
+description: MariaDB 10.3.39 database environment, core principles, and compatibility standards
+icon: database
+---
+
+## Database Environment
+
+CBDB Online uses a carefully designed database architecture that prioritizes compatibility and future flexibility.
+
+### Production Environment
+
+<CardGroup cols={2}>
+  <Card title="Database System" icon="server">
+    MariaDB 10.3.39 (Debian)
+    
+    ```
+    mysql Ver 15.1 Distrib 10.3.39-MariaDB
+    for debian-linux-gnu (x86_64)
+    ```
+  </Card>
+  
+  <Card title="Character Set" icon="language">
+    **Encoding**: utf8mb4
+    
+    **Collation**: utf8mb4_general_ci
+  </Card>
+</CardGroup>
+
+<Note>
+  **Timezone Configuration**: The system uses GMT+8 (Asia/Shanghai) uniformly. Both `datetime` and `timestamp` fields may appear in the database, so consistent timezone handling is critical to avoid date conflicts.
+</Note>
+
+### Testing & Development
+
+<CardGroup cols={2}>
+  <Card title="CI/CD Environment" icon="flask">
+    SQLite in-memory (`:memory:`)
+    
+    Fast, isolated test runs
+  </Card>
+  
+  <Card title="Local Development" icon="laptop-code">
+    MariaDB 10.3+ or MySQL 5.7+
+    
+    Recommended for development
+  </Card>
+</CardGroup>
+
+## Core Principles
+
+### Why Database Agnosticism?
+
+CBDB Online maintains database-agnostic code for several strategic reasons:
+
+<AccordionGroup>
+  <Accordion title="Future Migration Flexibility">
+    The project may need to migrate to PostgreSQL, MySQL 8.x, or other database systems in the future. Avoiding vendor lock-in ensures smooth transitions.
+  </Accordion>
+  
+  <Accordion title="Development Environment Diversity">
+    Developers may use different database versions or systems. Database-agnostic code ensures consistency across environments.
+  </Accordion>
+  
+  <Accordion title="CI/CD Efficiency">
+    Test environments use SQLite in-memory databases for speed. Code must work across both MySQL/MariaDB and SQLite.
+  </Accordion>
+  
+  <Accordion title="Cost Considerations">
+    Avoiding vendor-specific commercial features reduces dependency on specific database vendors.
+  </Accordion>
+</AccordionGroup>
+
+### Recommended Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Standard SQL" icon="check">
+    ```sql
+    -- ✅ Good: Standard SQL
+    SELECT * FROM users 
+    WHERE name LIKE 'John%';
+    
+    -- ✅ Good: Cross-database indexes
+    CREATE INDEX idx_name ON users(name);
+    ```
+  </Card>
+  
+  <Card title="Use Laravel Query Builder" icon="check">
+    ```php
+    // ✅ Good: Laravel abstraction layer
+    DB::table('users')
+        ->where('name', 'like', 'John%')
+        ->get();
+    ```
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="Use B-Tree Indexes" icon="check">
+    Supported by all database systems
+    
+    - Single column indexes
+    - UNIQUE indexes
+    - Composite indexes
+  </Card>
+  
+  <Card title="Avoid Vendor-Specific Features" icon="x">
+    ```sql
+    -- ❌ Bad: MySQL-specific ngram parser
+    CREATE FULLTEXT INDEX idx_name
+    ON table_name(column_name) 
+    WITH PARSER ngram;
+    
+    -- ❌ Bad: MariaDB-specific plugin
+    INSTALL SONAME 'ha_spider';
+    ```
+  </Card>
+</CardGroup>
+
+### Compatibility Guidelines
+
+<Tabs>
+  <Tab title="✅ Use">
+    - Laravel Schema Builder
+    - Standard SQL syntax
+    - B-Tree indexes (default)
+    - Application-layer full-text search (Elasticsearch, Meilisearch)
+    - Standard LIKE patterns for prefix matching
+  </Tab>
+  
+  <Tab title="❌ Avoid">
+    - Database-specific functions (REGEXP, optimizer hints)
+    - Vendor-specific syntax
+    - Full-text search with database-specific parsers
+    - Generated columns
+    - Database-specific storage engines
+  </Tab>
+</Tabs>
+
+## Index Strategy
+
+### B-Tree Indexes (Recommended)
+
+<Card title="Benefits" icon="bolt">
+  - ✅ Supported by all databases
+  - ✅ Excellent for prefix matching (`LIKE 'prefix%'`)
+  - ✅ Efficient for sorting and range queries
+  - ✅ Supports composite indexes
+</Card>
+
+```php
+Schema::table('users', function (Blueprint $table) {
+    $table->index('name');                      // Single column
+    $table->index(['last_name', 'first_name']); // Composite
+    $table->unique('email');                    // Unique
+});
+```
+
+### Composite Index Rules
+
+<Warning>
+  Queries must include the **leading columns** of the index to use it effectively.
+</Warning>
+
+**Example**: Index on `['last_name', 'first_name']`
+
+- ✅ **Can use index**: `WHERE last_name = 'Smith'`
+- ✅ **Can use index**: `WHERE last_name = 'Smith' AND first_name = 'John'`
+- ❌ **Cannot use index**: `WHERE first_name = 'John'` (skips leading column)
+
+## ORM Strategy
+
+<Tip>
+  **Important**: Laravel Eloquent ORM officially does not support composite primary keys. Choose the appropriate data access method based on table structure.
+</Tip>
+
+<Tabs>
+  <Tab title="Single Primary Key">
+    ```php
+    // ✅ Good: Use Eloquent for single primary key tables
+    class User extends Model {
+        protected $primaryKey = 'id';
+    }
+    
+    $user = User::find(1);
+    $user->update(['name' => 'New Name']);
+    $user->delete();
+    ```
+  </Tab>
+  
+  <Tab title="Composite Primary Key">
+    ```php
+    // ✅ Good: Use Query Builder for composite primary key tables
+    // Example: ALTNAME_DATA has composite key 
+    // (c_personid, c_sequence, c_alt_name_chn, c_alt_name_type_code)
+    
+    DB::table('ALTNAME_DATA')
+        ->where('c_personid', $personId)
+        ->where('c_sequence', $sequence)
+        ->update(['c_alt_name_chn' => $name]);
+    
+    DB::table('ALTNAME_DATA')
+        ->where('c_personid', $personId)
+        ->where('c_sequence', $sequence)
+        ->delete();
+    ```
+    
+    <Warning>
+      **Do not create Eloquent models for composite primary key tables**. Eloquent's `delete()`, `update()`, and `find()` methods will not work correctly.
+    </Warning>
+  </Tab>
+</Tabs>
+
+### Handling Side Effects
+
+For tables using Query Builder (composite keys), handle side effects explicitly:
+
+```php
+// Don't rely on Eloquent Observers (they won't fire for Query Builder)
+// Instead, manually call related services in Repository or Service layer
+
+// Example: Update name and refresh search index
+DB::table('ALTNAME_DATA')->where(...)->update(...);
+app(NameSearchIndexService::class)->refreshForPerson($personId);
+```
+
+<Note>
+  This approach is more explicit and easier to test than relying on model observers.
+</Note>
+
+## Quick Reference
+
+<CardGroup cols={2}>
+  <Card title="Production DB" icon="server">
+    MariaDB 10.3.39
+    
+    utf8mb4, GMT+8
+  </Card>
+  
+  <Card title="Test DB" icon="flask">
+    SQLite in-memory
+    
+    Fast, isolated tests
+  </Card>
+  
+  <Card title="Migrations" icon="code">
+    Use Schema Builder
+    
+    See [Migrations](/database/migrations)
+  </Card>
+  
+  <Card title="Schema Docs" icon="book">
+    Major tables documented
+    
+    See [Schema](/database/schema)
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card 
+    title="Explore Database Schema" 
+    icon="table" 
+    href="/database/schema"
+  >
+    Learn about major tables like BIOG_MAIN, POSTING_DATA, and more
+  </Card>
+  
+  <Card 
+    title="Database Migrations" 
+    icon="code" 
+    href="/database/migrations"
+  >
+    Understand how migrations work and how to create new ones
+  </Card>
+  
+  <Card 
+    title="Compatibility Guide" 
+    icon="check-double" 
+    href="/database/compatibility"
+  >
+    Learn about MySQL/SQLite compatibility principles
+  </Card>
+</CardGroup>

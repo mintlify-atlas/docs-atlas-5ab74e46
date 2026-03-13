@@ -1,0 +1,526 @@
+---
+title: Operations Audit & Logging
+description: How CBDB tracks all data modifications, what actions are logged, and the restore functionality
+---
+
+## Overview
+
+CBDB Online maintains a comprehensive audit trail of all data modifications through the `operations` table. Every create, update, and delete operation is logged with complete before/after snapshots, enabling operation review, restoration, and historical analysis.
+
+<Note>
+All data modifications **must** go through `OperationRepository::store()` to ensure proper audit logging.
+</Note>
+
+## Operations Table Schema
+
+The `operations` table is defined in the baseline migration:
+
+```sql
+CREATE TABLE `operations` (
+  `id` int unsigned NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `c_personid` int NOT NULL,
+  `op_type` smallint NOT NULL,
+  `resource` varchar(255) NOT NULL,
+  `resource_id` varchar(255) NOT NULL DEFAULT '',
+  `resource_data` longtext NOT NULL,
+  `resource_original` longtext,
+  `created_at` timestamp NULL DEFAULT NULL,
+  `updated_at` timestamp NULL DEFAULT NULL,
+  `crowdsourcing_status` smallint NOT NULL DEFAULT '0',
+  `rate` smallint NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  KEY `c_personid` (`c_personid`),
+  CONSTRAINT `c_personid` FOREIGN KEY (`c_personid`) 
+    REFERENCES `BIOG_MAIN` (`c_personid`) 
+    ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB;
+```
+
+### Field Descriptions
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | int | Auto-increment primary key |
+| `user_id` | int | ID of user who performed the operation |
+| `c_personid` | int | Person ID associated with the operation |
+| `op_type` | smallint | Operation type code (see below) |
+| `resource` | varchar(255) | Table name (e.g., 'BIOG_MAIN', 'ALTNAME_DATA') |
+| `resource_id` | varchar(255) | Primary key or composite key identifier |
+| `resource_data` | longtext | JSON of new/modified data |
+| `resource_original` | longtext | JSON of original data (for updates/deletes) |
+| `created_at` | timestamp | When operation was performed |
+| `updated_at` | timestamp | Last update timestamp |
+| `crowdsourcing_status` | smallint | Status for crowdsourcing proposals |
+| `rate` | smallint | Rating/priority (currently unused) |
+
+## Operation Types
+
+Operations are classified by `op_type`:
+
+| Code | Type | Description | Example |
+|------|------|-------------|--------|
+| `0` | Proposal Create | Crowdsourcing proposal to create new record | User proposes new person entry |
+| `1` | Create/Overwrite | New record created or existing overwritten | Adding new office posting |
+| `2` | Update/Modify | Existing record modified | Updating person's birth year |
+| `3` | Restore | Previous version restored | Admin restores accidentally changed data |
+| `4` | Delete | Record deleted | Removing incorrect kinship entry |
+
+### Operation Type Constants
+
+```php
+use App\Models\Operation;
+
+Operation::TYPE_PROPOSAL_CREATE   // 0
+Operation::TYPE_CREATE           // 1
+Operation::TYPE_UPDATE           // 2
+Operation::TYPE_RESTORE          // 3
+Operation::TYPE_DELETE           // 4
+```
+
+## Logging Operations
+
+### Using OperationRepository
+
+All operations must be logged through `OperationRepository::store()`:
+
+```php
+use App\Repositories\OperationRepository;
+use Illuminate\Support\Facades\Auth;
+
+$operationRepo = new OperationRepository();
+
+$operation = $operationRepo->store(
+    user_id: Auth::id(),
+    c_personid: $personId,
+    op_type: 2, // Update
+    resource: 'BIOG_MAIN',
+    resource_id: (string) $personId,
+    resource_data: $updatedData,  // New values
+    ori: $originalData,           // Old values
+    crowdsourcing_status: 0       // 0 for regular users, 2 for crowdsourcing
+);
+```
+
+### Parameter Details
+
+<Steps>
+  <Step title="user_id">
+    ID from `users` table - must be the currently authenticated user
+  </Step>
+  
+  <Step title="c_personid">
+    The person ID this operation relates to (from `BIOG_MAIN`)
+  </Step>
+  
+  <Step title="op_type">
+    Operation type code (1-4, see table above)
+  </Step>
+  
+  <Step title="resource">
+    Target table name (e.g., 'BIOG_MAIN', 'POSTED_TO_OFFICE_DATA')
+  </Step>
+  
+  <Step title="resource_id">
+    String representation of the record's primary key
+    
+    - Simple key: `"12345"`
+    - Composite key: `"123-456"` or encoded format
+  </Step>
+  
+  <Step title="resource_data">
+    Array of new field values - will be JSON encoded
+  </Step>
+  
+  <Step title="ori (optional)">
+    Array of original field values before modification - will be JSON encoded
+  </Step>
+  
+  <Step title="crowdsourcing_status">
+    0 for regular operations, 2 for crowdsourcing proposals
+  </Step>
+</Steps>
+
+## Tracked Actions
+
+### Biographical Data Operations
+
+<CardGroup cols={2}>
+  <Card title="BIOG_MAIN Updates" icon="user-pen">
+    All modifications to person records including name changes, date corrections, dynasty updates, etc.
+  </Card>
+  
+  <Card title="Alternative Names" icon="tags">
+    Adding, modifying, or removing entries in `ALTNAME_DATA`
+  </Card>
+  
+  <Card title="Office Postings" icon="briefcase">
+    Changes to `POSTING_DATA`, `POSTED_TO_OFFICE_DATA`, and `POSTED_TO_ADDR_DATA`
+    
+    Special handling: Address lists stored as JSON rows
+  </Card>
+  
+  <Card title="Relationships" icon="users">
+    Modifications to `KIN_DATA` (kinship) and `ASSOC_DATA` (associations)
+  </Card>
+</CardGroup>
+
+### Code Table Operations
+
+Modifications to reference tables accessed via `/codes/*`:
+
+- `ADDR_CODES` - Geographic locations
+- `OFFICE_CODES` - Office titles
+- `TEXT_CODES` - Source texts
+- And all other code tables listed in `config/codes.php`
+
+<Note>
+Internal tables with `CBDB__` prefix are read-only and do not generate operation logs.
+</Note>
+
+## Special Cases
+
+### Office Posting Operations
+
+Office-related operations use database transactions to ensure atomicity:
+
+```php
+// In BiogMainRepository
+public function officeUpdateById($postingId, $personId, array $data) {
+    return DB::transaction(function () use ($postingId, $personId, $data) {
+        // 1. Lock POSTED_TO_OFFICE_DATA record
+        $office = DB::table('POSTED_TO_OFFICE_DATA')
+            ->where('c_posting_id', $postingId)
+            ->where('c_personid', $personId)
+            ->lockForUpdate()
+            ->first();
+        
+        // 2. Update office data
+        DB::table('POSTED_TO_OFFICE_DATA')
+            ->where('c_posting_id', $postingId)
+            ->where('c_personid', $personId)
+            ->update($officeData);
+        
+        // 3. Sync POSTED_TO_ADDR_DATA
+        $this->syncAddressData($postingId, $personId, $addresses);
+        
+        // 4. Log operation with before/after snapshot
+        $operationRepo->store(/* ... */);
+    });
+}
+```
+
+<Warning>
+**Important**: Office operations write address data (`POSTED_TO_ADDR_DATA`) as JSON rows in `resource_data` for complete audit trail. Do not use controller-level `DB::table()` calls for office operations - always use repository methods.
+</Warning>
+
+### Address Data Logging
+
+For `POSTED_TO_ADDR_DATA` operations:
+
+- `resource_id` uses the format `"{c_office_id}-{c_posting_id}"` to share the edit interface
+- `resource_data['rows']` contains the full address list as JSON array
+- This enables proper restoration and comparison
+
+## Viewing Operation History
+
+All logged users can view operation history at `/operations`:
+
+### Features
+
+<CardGroup cols={2}>
+  <Card title="Filter by Type" icon="filter">
+    Filter operations by type: create, update, delete, restore
+  </Card>
+  
+  <Card title="User Filter" icon="user">
+    See operations by specific users
+  </Card>
+  
+  <Card title="Resource Filter" icon="table">
+    View changes to specific tables
+  </Card>
+  
+  <Card title="Compare Changes" icon="code-compare">
+    View before/after comparison for each operation
+  </Card>
+</CardGroup>
+
+### Operation Details Page
+
+Clicking an operation shows:
+
+1. **Basic Information**
+   - User who performed the action
+   - Timestamp
+   - Person ID and name
+   - Operation type
+
+2. **Data Comparison**
+   - Field-by-field before/after comparison
+   - Current database value
+   - Highlights which fields have changed since the operation
+
+3. **Restore Button** (experts/admins only)
+   - Allows reverting to the "before" state
+
+## Restoration Functionality
+
+<Warning>
+Only **active experts** (`is_active == 1` AND `is_admin == 1`) and **active super admins** (`is_active == 1` AND `is_admin == 3`) can restore operations.
+</Warning>
+
+### How Restoration Works
+
+<Steps>
+  <Step title="User Selects Operation">
+    Expert/admin navigates to `/operations` and selects an operation to restore
+  </Step>
+  
+  <Step title="Confirm Restoration">
+    System prompts: "將以你的名義對該資源進行一次修改，恢復至本次改動之前，是否繼續?" (Will perform a modification in your name to restore to the state before this change. Continue?)
+  </Step>
+  
+  <Step title="Execute Restoration">
+    `OperationsController::restore()` method:
+    - Retrieves the original data from `resource_original`
+    - Writes it back to the target table
+    - Creates a new operation record with `op_type = 3` (restore)
+  </Step>
+  
+  <Step title="Log Restoration">
+    New operation record shows:
+    - Executor's user ID
+    - `op_type = 3` (restore type)
+    - `resource_data` = restored values
+    - `resource_original` = values before restoration
+  </Step>
+</Steps>
+
+### Restoration Example
+
+```php
+// In OperationsController
+public function restore($id) {
+    // 1. Check permission
+    if (!Auth::user()->canRestoreOperations()) {
+        flash('權限不足', 'error');
+        return redirect()->back();
+    }
+    
+    // 2. Get original operation
+    $operation = Operation::findOrFail($id);
+    $originalData = json_decode($operation->resource_original, true);
+    
+    // 3. Read current database state
+    $currentData = DB::table($operation->resource)
+        ->where(/* composite key conditions */)
+        ->first();
+    
+    // 4. Write original data back to table
+    DB::table($operation->resource)
+        ->where(/* composite key conditions */)
+        ->update($originalData);
+    
+    // 5. Log the restoration
+    $operationRepo->store(
+        user_id: Auth::id(),
+        c_personid: $operation->c_personid,
+        op_type: 3, // Restore
+        resource: $operation->resource,
+        resource_id: $operation->resource_id,
+        resource_data: $originalData,
+        ori: (array) $currentData
+    );
+    
+    flash('復原成功', 'success');
+    return redirect()->back();
+}
+```
+
+<Note>
+Currently, operations involving `POSTED_TO_ADDR_DATA` do not have automatic one-click restore enabled on the UI due to complexity. Manual restoration is still possible.
+</Note>
+
+## Proposal Note Handling
+
+`OperationRepository` automatically processes proposal comments:
+
+```php
+// In OperationRepository::store()
+protected function attachProposalNote($resourceData) {
+    // Extract __proposal_comment from request
+    $comment = trim((string) request()->input('__proposal_comment', ''));
+    
+    // Attach to resource_data as __note if provided
+    if ($comment !== '') {
+        $resourceData['__note'] = $comment;
+    }
+    
+    return $resourceData;
+}
+```
+
+Fields starting with `__` are metadata and not written to the actual data table.
+
+## Crowdsourcing Status Codes
+
+| Value | Status | Meaning |
+|-------|--------|--------|
+| `0` | Professional | Direct modification by regular/expert/super-admin |
+| `1` | Applied | Crowdsourcing proposal approved and applied |
+| `2` | Pending | Crowdsourcing proposal awaiting expert review |
+| `3` | Rejected | Crowdsourcing proposal rejected |
+| `4` | Failed | Crowdsourcing proposal application failed |
+
+### Checking for Pending Proposals
+
+```php
+// Check if there's already a pending proposal
+$hasPending = $operationRepo->hasPendingCreateProposal(
+    resource: 'BIOG_MAIN',
+    resourceId: '12345',
+    excludeId: null
+);
+
+if ($hasPending) {
+    flash('該資源已有待審核的提案', 'warning');
+    return redirect()->back();
+}
+```
+
+## Data Comparison Utilities
+
+### Field-Level Diff
+
+`OperationRepository::getArrDiff()` compares three versions of data:
+
+```php
+$diff = $operationRepo->getArrDiff(
+    arr1: $afterData,    // Proposed/new values
+    arr2: $beforeData,   // Values when operation was logged
+    arr3: $currentData   // Current database values
+);
+
+// Returns:
+[
+    'rows' => [
+        [
+            'field' => 'c_name_chn',
+            'before' => '王安石',
+            'after' => '王安國',
+            'current' => '王安石',
+            'matches_current' => false,
+            'matches_before' => true
+        ],
+        // ...
+    ]
+]
+```
+
+### Special: Address Data Diff
+
+For `POSTED_TO_ADDR_DATA`:
+
+```php
+$diff = $operationRepo->buildPostedToAddrDiff(
+    afterRows: $proposedAddresses,
+    beforeRows: $originalAddresses,
+    currentRows: $currentAddresses
+);
+
+// Returns structured diff with address labels from ADDR_CODES
+[
+    'type' => 'POSTED_TO_ADDR_DATA',
+    'keys' => [
+        'before' => ['c_personid' => 123, 'c_office_id' => 456, ...],
+        'after' => ['c_personid' => 123, 'c_office_id' => 456, ...],
+        'current' => ['c_personid' => 123, 'c_office_id' => 456, ...]
+    ],
+    'addresses' => [
+        [
+            'id' => 789,
+            'before' => '789 北京',
+            'after' => null,
+            'current' => '789 北京'
+        ],
+        // ...
+    ]
+]
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Always Use Repository" icon="box-archive">
+    Never write directly to data tables without calling `OperationRepository::store()`
+  </Card>
+  
+  <Card title="Capture Original State" icon="camera">
+    For updates and deletes, always pass the original data in the `ori` parameter
+  </Card>
+  
+  <Card title="Use Transactions" icon="arrows-rotate">
+    Wrap multi-table operations in DB transactions to ensure atomicity
+  </Card>
+  
+  <Card title="Test Restoration" icon="clock-rotate-left">
+    Write tests to verify that restore functionality works for each operation type
+  </Card>
+</CardGroup>
+
+## Testing Operation Logging
+
+```php
+use Tests\TestCase;
+use App\Models\User;
+use App\Models\Operation;
+use App\Repositories\OperationRepository;
+use Illuminate\Support\Facades\DB;
+
+class OperationLoggingTest extends TestCase
+{
+    public function test_update_creates_operation_log()
+    {
+        // Arrange
+        $user = User::factory()->active()->expert()->create();
+        $this->actingAs($user);
+        
+        $personId = 12345;
+        $oldData = ['c_name_chn' => '王安石'];
+        $newData = ['c_name_chn' => '王安國'];
+        
+        // Act
+        $operationRepo = new OperationRepository();
+        $operation = $operationRepo->store(
+            user_id: $user->id,
+            c_personid: $personId,
+            op_type: 2,
+            resource: 'BIOG_MAIN',
+            resource_id: (string) $personId,
+            resource_data: $newData,
+            ori: $oldData
+        );
+        
+        // Assert
+        $this->assertDatabaseHas('operations', [
+            'user_id' => $user->id,
+            'c_personid' => $personId,
+            'op_type' => 2,
+            'resource' => 'BIOG_MAIN'
+        ]);
+        
+        $this->assertSame($oldData['c_name_chn'], 
+            json_decode($operation->resource_original, true)['c_name_chn']);
+        $this->assertSame($newData['c_name_chn'], 
+            json_decode($operation->resource_data, true)['c_name_chn']);
+    }
+}
+```
+
+## See Also
+
+- [User Roles](/concepts/user-roles) - Permission system for operation logging and restoration
+- [Data Model](/concepts/data-model) - Database schema overview
+- [Biographical Records](/concepts/biographical-records) - Understanding person data that gets logged
+- AGENTS.md (source) - Development guidelines for operations

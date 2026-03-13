@@ -1,0 +1,616 @@
+---
+title: Repository Pattern
+description: How the Repository pattern is implemented in CBDB Online for clean separation of data access logic
+---
+
+## What is the Repository Pattern?
+
+The **Repository Pattern** is a design pattern that creates an abstraction layer between the application's business logic (controllers) and data access logic (database queries). In CBDB Online, repositories encapsulate all database operations to keep controllers clean and testable.
+
+## Benefits
+
+<CardGroup cols={2}>
+  <Card title="Separation of Concerns" icon="layer-group">
+    Controllers focus on request handling, repositories handle data access
+  </Card>
+  
+  <Card title="Testability" icon="flask">
+    Easy to mock repositories in tests without touching the database
+  </Card>
+  
+  <Card title="Reusability" icon="recycle">
+    Same repository methods used across multiple controllers
+  </Card>
+  
+  <Card title="Maintainability" icon="screwdriver-wrench">
+    Database query changes only affect repository, not controllers
+  </Card>
+</CardGroup>
+
+## Repository Architecture
+
+```
+HTTP Request
+    ↓
+Controller (app/Http/Controllers/)
+    ↓ calls methods
+Repository (app/Repositories/)
+    ↓ uses
+Model/Query Builder
+    ↓ executes
+Database Query
+    ↓
+Database (MariaDB)
+```
+
+## Core Repository Classes
+
+All repositories are located in `app/Repositories/`:
+
+### BiogMainRepository
+
+**Purpose:** Handles all person (BIOG_MAIN) data operations
+
+**Key Methods:**
+```php
+// Retrieve person by ID with related data
+public function byPersonId($id)
+
+// Store office posting with transaction
+public function officeStoreById($personId, $officeData, $addresses)
+
+// Update office posting with address sync
+public function officeUpdateById($personId, $officeId, $postingId, $data, $addresses)
+
+// Delete office posting
+public function officeDeleteById($personId, $officeId, $postingId)
+```
+
+<Note>
+  Office-related methods use **database transactions** to ensure data consistency across `POSTING_DATA`, `POSTED_TO_OFFICE_DATA`, and `POSTED_TO_ADDR_DATA` tables.
+</Note>
+
+**Example Usage:**
+
+```php
+// In BiogBasicInformationController
+use App\Repositories\BiogMainRepository;
+
+class BiogBasicInformationController extends Controller {
+    private $biogMainRepository;
+
+    public function __construct(BiogMainRepository $biogMainRepository) {
+        $this->biogMainRepository = $biogMainRepository;
+    }
+
+    public function show($personid) {
+        $person = $this->biogMainRepository->byPersonId($personid);
+        
+        if (!$person) {
+            abort(404);
+        }
+        
+        return view('basicinformation.show', compact('person'));
+    }
+}
+```
+
+### OperationRepository
+
+**Purpose:** Manages operation logs for audit trail and data restoration
+
+**Key Methods:**
+```php
+// Store a new operation record
+public function store(
+    $user_id,
+    $c_personid,
+    $op_type,
+    $resource,
+    $resource_id,
+    $resource_data,
+    $ori = '',
+    $crowdsourcing_status = 0
+)
+
+// Check if a pending create proposal exists
+public function hasPendingCreateProposal(
+    string $resource,
+    string $resourceId,
+    ?int $excludeId = null
+): bool
+```
+
+**Operation Types:**
+- `1` - Create
+- `2` - Update
+- `3` - Restore
+- `4` - Delete
+
+**Example Usage:**
+
+```php
+// In OperationsController
+use App\Repositories\OperationRepository;
+
+class OperationsController extends Controller {
+    private $operationRepository;
+
+    public function __construct(OperationRepository $operationRepository) {
+        $this->operationRepository = $operationRepository;
+    }
+
+    public function store(Request $request) {
+        $this->operationRepository->store(
+            auth()->id(),
+            $request->c_personid,
+            1, // Create operation
+            'BIOG_MAIN',
+            $request->c_personid,
+            $request->all()
+        );
+        
+        flash('Operation logged successfully')->success();
+        return redirect()->back();
+    }
+}
+```
+
+### CodesRepository
+
+**Purpose:** Manages access to code tables (lookup tables)
+
+**Key Methods:**
+```php
+// Get list of allowed code table names
+public function allowedTables(): array
+
+// Get mapping of table names (case-insensitive)
+public function allowedTableMap(): array
+
+// Get all code tables with descriptions
+public function codes()
+```
+
+**Example Usage:**
+
+```php
+// In CodesController
+use App\Repositories\CodesRepository;
+
+class CodesController extends Controller {
+    private $codesRepository;
+
+    public function __construct(CodesRepository $codesRepository) {
+        $this->codesRepository = $codesRepository;
+    }
+
+    public function index() {
+        $tables = $this->codesRepository->codes();
+        return view('codes.index', compact('tables'));
+    }
+
+    public function show($table) {
+        $allowed = $this->codesRepository->allowedTables();
+        
+        if (!in_array($table, $allowed)) {
+            abort(404);
+        }
+        
+        // Query the table...
+    }
+}
+```
+
+### Other Key Repositories
+
+<CardGroup cols={2}>
+  <Card title="OfficePostingRepository">
+    Office posting data operations
+  </Card>
+  
+  <Card title="RelationshipRepository">
+    Kinship and association relationships
+  </Card>
+  
+  <Card title="EntryRepository">
+    Entry code (examination) data
+  </Card>
+  
+  <Card title="ToolsRepository">
+    Common utility functions (e.g., timestamp generation)
+  </Card>
+</CardGroup>
+
+## Implementation Guidelines
+
+### When to Create a Repository
+
+Create a repository when:
+
+<Steps>
+  <Step title="Complex queries are needed">
+    Multiple table joins, subqueries, or aggregations
+  </Step>
+  
+  <Step title="Multiple controllers need the same data">
+    Avoid duplicating queries across controllers
+  </Step>
+  
+  <Step title="Business logic is involved">
+    Data transformation, validation, or special handling
+  </Step>
+  
+  <Step title="Testing isolation is required">
+    Controllers should be testable without hitting the database
+  </Step>
+</Steps>
+
+### Repository Structure
+
+**Basic Template:**
+
+```php
+namespace App\Repositories;
+
+use App\Models\YourModel;
+use Illuminate\Support\Facades\DB;
+
+class YourRepository {
+    /**
+     * Find a record by ID
+     *
+     * @param int $id
+     * @return YourModel|null
+     */
+    public function findById(int $id): ?YourModel {
+        return YourModel::find($id);
+    }
+
+    /**
+     * Create a new record
+     *
+     * @param array $data
+     * @return YourModel
+     */
+    public function create(array $data): YourModel {
+        return YourModel::create($data);
+    }
+
+    /**
+     * Update a record with transaction
+     *
+     * @param int $id
+     * @param array $data
+     * @return bool
+     */
+    public function update(int $id, array $data): bool {
+        return DB::transaction(function () use ($id, $data) {
+            $record = YourModel::findOrFail($id);
+            return $record->update($data);
+        });
+    }
+
+    /**
+     * Delete a record
+     *
+     * @param int $id
+     * @return bool
+     */
+    public function delete(int $id): bool {
+        $record = YourModel::findOrFail($id);
+        return $record->delete();
+    }
+}
+```
+
+### Single vs Composite Primary Keys
+
+<Warning>
+  Laravel Eloquent **does not support composite primary keys**. Use Query Builder for tables with composite keys.
+</Warning>
+
+**Single Primary Key (Use Eloquent):**
+
+```php
+public function findPerson(int $personId) {
+    // ✅ Correct: BIOG_MAIN has single primary key (c_personid)
+    return BiogMain::find($personId);
+}
+```
+
+**Composite Primary Key (Use Query Builder):**
+
+```php
+public function findAltname(int $personId, int $sequence) {
+    // ✅ Correct: ALTNAME_DATA has composite key
+    return DB::table('ALTNAME_DATA')
+        ->where('c_personid', $personId)
+        ->where('c_sequence', $sequence)
+        ->first();
+}
+
+public function updateAltname(int $personId, int $sequence, array $data) {
+    // ✅ Correct: Update using Query Builder
+    return DB::table('ALTNAME_DATA')
+        ->where('c_personid', $personId)
+        ->where('c_sequence', $sequence)
+        ->update($data);
+}
+```
+
+**Tables with Composite Keys:**
+- `ALTNAME_DATA`
+- `POSTED_TO_OFFICE_DATA`
+- `POSTED_TO_ADDR_DATA`
+- `KINSHIP_DATA`
+- `ASSOC_DATA`
+
+### Using Transactions
+
+For operations that modify multiple tables, **always use database transactions**:
+
+```php
+use Illuminate\Support\Facades\DB;
+
+public function createOfficeWithAddresses(
+    int $personId,
+    array $officeData,
+    array $addresses
+) {
+    return DB::transaction(function () use ($personId, $officeData, $addresses) {
+        // 1. Insert into POSTING_DATA
+        $postingId = DB::table('POSTING_DATA')->insertGetId([
+            'c_personid' => $personId,
+            // ...
+        ]);
+
+        // 2. Insert into POSTED_TO_OFFICE_DATA
+        DB::table('POSTED_TO_OFFICE_DATA')->insert([
+            'c_personid' => $personId,
+            'c_posting_id' => $postingId,
+            // ...
+        ]);
+
+        // 3. Insert addresses into POSTED_TO_ADDR_DATA
+        foreach ($addresses as $address) {
+            DB::table('POSTED_TO_ADDR_DATA')->insert([
+                'c_personid' => $personId,
+                'c_posting_id' => $postingId,
+                // ...
+            ]);
+        }
+
+        // 4. Log operation
+        app(OperationRepository::class)->store(
+            auth()->id(),
+            $personId,
+            1, // Create
+            'POSTED_TO_OFFICE_DATA',
+            "{$officeData['c_office_id']}-{$postingId}",
+            $officeData
+        );
+
+        return $postingId;
+    });
+}
+```
+
+<Tip>
+  If any step fails within a transaction, all changes are automatically rolled back.
+</Tip>
+
+### Repository Dependencies
+
+Repositories can depend on other repositories:
+
+```php
+class BiogMainRepository {
+    // Dependency injection via methods
+    public function officePostingRepository(): OfficePostingRepository {
+        return app(OfficePostingRepository::class);
+    }
+
+    public function relationshipRepository(): RelationshipRepository {
+        return app(RelationshipRepository::class);
+    }
+
+    // Use in methods
+    public function getPersonWithOffices(int $personId) {
+        $person = $this->byPersonId($personId);
+        $offices = $this->officePostingRepository()->getByPersonId($personId);
+        
+        return compact('person', 'offices');
+    }
+}
+```
+
+## Testing Repositories
+
+### Unit Testing Example
+
+```php
+namespace Tests\Unit;
+
+use Tests\TestCase;
+use App\Repositories\OperationRepository;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
+
+class OperationRepositoryTest extends TestCase {
+    private $repository;
+
+    protected function setUp(): void {
+        parent::setUp();
+
+        // Configure in-memory SQLite
+        config()->set('database.default', 'sqlite');
+        config()->set('database.connections.sqlite', [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+        ]);
+
+        // Create minimal table structure
+        Schema::create('operations', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->unsignedInteger('c_personid');
+            $table->tinyInteger('op_type');
+            $table->string('resource');
+            $table->string('resource_id');
+            $table->text('resource_data');
+            $table->timestamps();
+        });
+
+        $this->repository = new OperationRepository();
+    }
+
+    public function test_store_creates_operation_record() {
+        $operation = $this->repository->store(
+            1,       // user_id
+            12345,   // c_personid
+            1,       // op_type (create)
+            'BIOG_MAIN',
+            '12345',
+            ['name' => 'Test Person']
+        );
+
+        $this->assertDatabaseHas('operations', [
+            'user_id' => 1,
+            'c_personid' => 12345,
+            'op_type' => 1,
+            'resource' => 'BIOG_MAIN',
+        ]);
+
+        $this->assertEquals('BIOG_MAIN', $operation->resource);
+    }
+}
+```
+
+### Mocking Repositories in Controller Tests
+
+```php
+namespace Tests\Feature;
+
+use Tests\TestCase;
+use App\Repositories\BiogMainRepository;
+use App\Models\User;
+
+class BiogBasicInformationControllerTest extends TestCase {
+    public function test_show_displays_person_data() {
+        // Mock the repository
+        $mockRepo = $this->createMock(BiogMainRepository::class);
+        $mockRepo->method('byPersonId')
+            ->willReturn((object) [
+                'c_personid' => 12345,
+                'c_name' => 'Test Person',
+            ]);
+
+        $this->app->instance(BiogMainRepository::class, $mockRepo);
+
+        // Test the controller
+        $user = User::factory()->create();
+        $response = $this->actingAs($user)
+            ->get('/basicinformation/12345');
+
+        $response->assertStatus(200);
+        $response->assertSee('Test Person');
+    }
+}
+```
+
+## Common Patterns
+
+### Eager Loading Related Data
+
+```php
+public function byPersonId($id) {
+    return BiogMain::withCount(
+        'sources',
+        'texts',
+        'biog_addresses',
+        'altnames',
+        'offices',
+        'entries',
+        'statuses',
+        'kinship',
+        'assoc',
+        'possession',
+        'inst',
+        'events'
+    )->find($id);
+}
+```
+
+### Query Scoping
+
+```php
+public function getActiveUsers() {
+    return User::where('is_active', 1)
+        ->orderBy('name')
+        ->get();
+}
+
+public function getAdmins() {
+    return User::where('is_active', 1)
+        ->where('is_admin', 1)
+        ->get();
+}
+```
+
+### Pagination
+
+```php
+public function getPaginatedOperations(int $perPage = 15) {
+    return Operation::orderBy('created_at', 'desc')
+        ->paginate($perPage);
+}
+```
+
+## Best Practices
+
+<Steps>
+  <Step title="Keep methods focused">
+    Each method should do one thing well
+  </Step>
+  
+  <Step title="Use type hints">
+    Specify parameter and return types for better IDE support
+  </Step>
+  
+  <Step title="Document complex queries">
+    Add comments explaining business logic
+  </Step>
+  
+  <Step title="Avoid business logic in repositories">
+    Repositories should handle data access only, not business rules
+  </Step>
+  
+  <Step title="Use transactions for multi-table operations">
+    Ensure data consistency
+  </Step>
+  
+  <Step title="Return consistent data types">
+    Don't mix arrays, objects, and models in the same method
+  </Step>
+</Steps>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Architecture" href="/dev/architecture" icon="sitemap">
+    Overall system architecture
+  </Card>
+  
+  <Card title="Testing" href="/dev/testing" icon="flask">
+    Testing repositories and controllers
+  </Card>
+  
+  <Card title="Database Setup" href="/setup/database" icon="database">
+    Database schema and migrations
+  </Card>
+  
+  <Card title="Tech Stack" href="/dev/tech-stack" icon="layer-group">
+    Technologies and versions
+  </Card>
+</CardGroup>

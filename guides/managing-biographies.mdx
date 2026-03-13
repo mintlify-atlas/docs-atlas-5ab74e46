@@ -1,0 +1,274 @@
+---
+title: "Managing Biographies"
+description: "Create, edit, and manage historical person records in CBDB Online"
+icon: "user-pen"
+---
+
+## Overview
+
+Biographical records are the foundation of CBDB Online. Each person record contains comprehensive information about historical Chinese figures, including names, dynasties, life dates, geographic associations, and relationships.
+
+## Accessing Biographical Records
+
+<Steps>
+  <Step title="Navigate to the biography list">
+    Go to `/basicinformation` to view all person records. The list supports:
+    - Search by name (Chinese or romanized)
+    - Filter by dynasty
+    - Pagination (default 20 records per page)
+  </Step>
+  <Step title="Search for a person">
+    Use the search box with query parameter `?q=<name>` to find specific people.
+  </Step>
+  <Step title="Select a person">
+    Click on a person's name to view their complete biographical record.
+  </Step>
+</Steps>
+
+## Creating a New Biography
+
+<Steps>
+  <Step title="Click 'Create New' button">
+    Navigate to `/basicinformation/create` or click the "Create New" button from the list page.
+  </Step>
+  <Step title="Fill in basic information">
+    Required fields:
+    - **Chinese Name** (`c_name_chn`): Person's Chinese name
+    - **Romanized Name** (`c_name`): Pinyin or Wade-Giles romanization
+    - **Dynasty** (`c_dy`): Select from dynasty dropdown
+    - **Index Year** (`c_index_year`): Representative year for this person
+  </Step>
+  <Step title="Add biographical details">
+    Optional but recommended:
+    - **Birth Year** (`c_birthyr`): Year of birth
+    - **Death Year** (`c_deathyr`): Year of death
+    - **Gender** (`c_female`): 0 for male, 1 for female
+    - **Notes** (`c_notes`): Additional information
+  </Step>
+  <Step title="Save the record">
+    Click "Save" to create the new person record. The system will:
+    - Generate a unique `c_personid`
+    - Create operation log entry
+    - Update name search index automatically
+  </Step>
+</Steps>
+
+<Note>
+All biographical data operations are logged in the `operations` table with operation type 1 (create), 2 (update), or 4 (delete). Administrators can restore previous versions if needed.
+</Note>
+
+## Editing Existing Biographies
+
+### Update Basic Information
+
+<Steps>
+  <Step title="Navigate to edit page">
+    From the person's detail page, click "Edit" or go to `/basicinformation/{personid}/edit`.
+  </Step>
+  <Step title="Modify fields">
+    Change any fields as needed. The form includes:
+    - Name fields (Chinese, romanized, surname)
+    - Temporal information (birth/death/floruit years)
+    - Dynasty and index year
+    - Geographic associations
+    - Notes and references
+  </Step>
+  <Step title="Save changes">
+    Click "Save" to update the record. The system automatically:
+    - Logs the changes with before/after values
+    - Updates timestamps
+    - Rebuilds search indexes if name changed
+  </Step>
+</Steps>
+
+### Controller Implementation
+
+The biography CRUD operations are handled by `BasicInformationController`:
+
+```php BasicInformationController.php
+public function update(BasicInformationRequest $request, $id) {
+    $personId = $this->normalizePersonId($id);
+    
+    // Update person record using repository
+    $person = $this->biogMainRepository->updateById($personId, $request->validated());
+    
+    // Log operation
+    $this->operationRepository->store([
+        'op_type' => 2, // update
+        'resource_type' => 'Person Data',
+        'resource_id' => (string)$personId,
+        // ... additional logging details
+    ]);
+    
+    return redirect()->route('basicinformation.show', $personId)
+        ->with('success', 'Person updated successfully');
+}
+```
+
+## Adding Related Information
+
+Once a person record is created, you can add:
+
+<CardGroup cols={2}>
+  <Card title="Alternative Names" icon="signature" href="/guides/managing-biographies#alternative-names">
+    Add aliases, courtesy names, and other name variations
+  </Card>
+  <Card title="Addresses" icon="location-dot" href="/guides/managing-biographies#addresses">
+    Add birthplace, ancestral home, and other geographic associations
+  </Card>
+  <Card title="Office Postings" icon="briefcase" href="/guides/office-postings">
+    Record government positions and career history
+  </Card>
+  <Card title="Kinship" icon="family" href="/guides/kinship-relations">
+    Document family relationships
+  </Card>
+  <Card title="Associations" icon="handshake" href="/guides/social-associations">
+    Record social relationships and associations
+  </Card>
+  <Card title="Literary Works" icon="book" href="/guides/managing-biographies#texts">
+    Add information about texts and publications
+  </Card>
+</CardGroup>
+
+### Alternative Names
+
+Alternative names are stored in the `ALTNAME_DATA` table with composite primary key `(c_personid, c_sequence, c_alt_name_chn, c_alt_name_type_code)`.
+
+<Accordion title="Add alternative name">
+  1. Navigate to the person's detail page
+  2. Scroll to "Alternative Names" section
+  3. Click "Add New Alternative Name"
+  4. Fill in:
+     - Chinese name
+     - Romanized name
+     - Name type code (courtesy name, style name, etc.)
+  5. Save
+</Accordion>
+
+### Addresses
+
+Geographic associations are stored in `BIOG_ADDR_DATA` with composite primary key `(c_personid, c_addr_id, c_addr_type)`.
+
+<Accordion title="Add address">
+  1. Navigate to the person's detail page
+  2. Scroll to "Addresses" section
+  3. Click "Add New Address"
+  4. Select:
+     - Place from `ADDR_CODES`
+     - Address type (birthplace, ancestral home, etc.)
+  5. Save
+</Accordion>
+
+## Deleting Biographies
+
+<Warning>
+Deleting a person record will also delete all related records:
+- Alternative names
+- Addresses
+- Office postings
+- Kinship relations
+- Social associations
+- Texts
+
+This action is logged and can be restored by administrators.
+</Warning>
+
+<Steps>
+  <Step title="Navigate to edit page">
+    Go to `/basicinformation/{personid}/edit`
+  </Step>
+  <Step title="Click Delete button">
+    Confirm the deletion when prompted
+  </Step>
+  <Step title="System processing">
+    The system will:
+    - Set deletion timestamp
+    - Log operation with type 4 (delete)
+    - Cascade delete related records based on foreign key constraints
+  </Step>
+</Steps>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Name Entry Guidelines">
+    - Use traditional Chinese characters for `c_name_chn`
+    - Use standard romanization (Pinyin for modern, Wade-Giles for historical)
+    - Include surname separately in `c_surname_chn` when known
+    - Mark names with binary collation for case-sensitive searches
+  </Accordion>
+  
+  <Accordion title="Date Entry">
+    - Use index year as the most representative year for the person
+    - Enter birth/death years when known
+    - Use floruit (c_fl) for estimated active period when exact dates unknown
+    - Link to nian hao (reign periods) for precise dating
+  </Accordion>
+  
+  <Accordion title="Dynasty Association">
+    - Always select the most relevant dynasty from `DYNASTIES`
+    - For people spanning multiple dynasties, choose primary dynasty
+    - Use index year to help determine appropriate dynasty
+  </Accordion>
+  
+  <Accordion title="Data Quality">
+    - Add sources in `BIOG_SOURCE_DATA` to track data provenance
+    - Use notes field for additional context or uncertainties
+    - Review crowdsourcing proposals before approval
+    - Verify data against authoritative sources
+  </Accordion>
+</AccordionGroup>
+
+## Permissions
+
+Different user roles have different permissions for managing biographies:
+
+| Role | Create | Edit | Delete | Restore |
+|------|--------|------|--------|---------|
+| Regular (0) | Proposal only | Proposal only | No | No |
+| Expert (1) | Direct | Direct | Yes | Yes |
+| Crowdsourcing (2) | Proposal only | Proposal only | No | No |
+| Super Admin (3) | Direct | Direct | Yes | Yes |
+
+<Tip>
+Expert users and administrators can edit records directly. Regular and crowdsourcing users create proposals that require review and approval.
+</Tip>
+
+## Related Tables
+
+### BIOG_MAIN Schema
+
+```sql Schema
+CREATE TABLE BIOG_MAIN (
+    c_personid INT PRIMARY KEY,
+    c_name_chn VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin,
+    c_name VARCHAR(255),
+    c_surname_chn VARCHAR(64),
+    c_dy INT,
+    c_index_year INT,
+    c_birthyr INT,
+    c_deathyr INT,
+    c_female TINYINT,
+    c_notes TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    FOREIGN KEY (c_dy) REFERENCES DYNASTIES(c_dy)
+);
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add Office Postings" icon="briefcase" href="/guides/office-postings">
+    Record career history and government positions
+  </Card>
+  <Card title="Document Relationships" icon="network-wired" href="/guides/kinship-relations">
+    Add family and social connections
+  </Card>
+  <Card title="View Operations Log" icon="list-check" href="/admin/operations-log">
+    Track all changes to biographical records
+  </Card>
+  <Card title="Learn About Data Model" icon="database" href="/concepts/data-model">
+    Understand the database structure
+  </Card>
+</CardGroup>

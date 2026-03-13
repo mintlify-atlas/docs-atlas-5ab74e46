@@ -1,0 +1,331 @@
+---
+title: 'Office Postings'
+description: 'Query office appointment records with complex filtering'
+icon: 'briefcase'
+---
+
+## Query Office Postings
+
+Query office appointment records (除授記錄) with support for office, place, and time period filtering.
+
+### Endpoint
+
+```bash
+POST /api/query_office_postings
+```
+
+<Note>
+This endpoint uses **POST** method with `Content-Type: application/json`.
+</Note>
+
+### Request Body Parameters
+
+<ParamField body="office" type="array" required>
+  Array of office IDs to query
+</ParamField>
+
+<ParamField body="useOfficePlace" type="number" default={0}>
+  Enable office-related place filtering:
+  - `1`: Enable
+  - `0`: Disable (ignores `officePlace`)
+</ParamField>
+
+<ParamField body="officePlace" type="array">
+  Array of office-related place IDs (only used if `useOfficePlace=1`)
+</ParamField>
+
+<ParamField body="usePeoplePlace" type="number" default={0}>
+  Enable person-related place filtering:
+  - `1`: Enable
+  - `0`: Disable (ignores `peoplePlace`)
+</ParamField>
+
+<ParamField body="peoplePlace" type="array">
+  Array of person-related place IDs (only used if `usePeoplePlace=1`)
+</ParamField>
+
+<ParamField body="useDate" type="number" default={0}>
+  Enable date filtering:
+  - `1`: Enable
+  - `0`: Disable (ignores all date parameters)
+</ParamField>
+
+<ParamField body="dateType" type="string">
+  Date type (only used if `useDate=1`):
+  - `index`: Index year
+  - `dynasty`: Dynasty
+</ParamField>
+
+<ParamField body="indexStartTime" type="number">
+  Index year start (only used if `dateType=index`)
+</ParamField>
+
+<ParamField body="indexEndTime" type="number">
+  Index year end (only used if `dateType=index`)
+</ParamField>
+
+<ParamField body="dynStart" type="number">
+  Dynasty start code (only used if `dateType=dynasty`)
+</ParamField>
+
+<ParamField body="dynEnd" type="number">
+  Dynasty end code (only used if `dateType=dynasty`, inclusive)
+</ParamField>
+
+<ParamField body="useXy" type="number" default={0}>
+  Include coordinate data:
+  - `1`: Include
+  - `0`: Exclude
+</ParamField>
+
+<ParamField body="start" type="number" default={0}>
+  Starting record number (0-based)
+</ParamField>
+
+<ParamField body="list" type="number" default={65535}>
+  Number of records to return
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+```bash Full example with all filters
+curl -X POST "https://input.cbdb.fas.harvard.edu/api/query_office_postings" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "office": [920, 1022, 1023],
+    "useOfficePlace": 0,
+    "officePlace": [],
+    "usePeoplePlace": 1,
+    "peoplePlace": [2928, 10522, 12553, 13947, 13949],
+    "useDate": 1,
+    "dateType": "index",
+    "indexStartTime": 960,
+    "indexEndTime": 1250,
+    "dynStart": null,
+    "dynEnd": null,
+    "useXy": 1,
+    "start": 11,
+    "list": 10
+  }'
+```
+
+```bash Simple office query
+curl -X POST "https://input.cbdb.fas.harvard.edu/api/query_office_postings" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "office": [950],
+    "useOfficePlace": 0,
+    "officePlace": [],
+    "usePeoplePlace": 0,
+    "peoplePlace": [],
+    "useDate": 0,
+    "dateType": "index",
+    "indexStartTime": null,
+    "dynStart": null,
+    "dynEnd": null,
+    "useXy": 0,
+    "start": 0,
+    "list": 65535
+  }'
+```
+</CodeGroup>
+
+<Note>
+The first example queries appointment records for Prime Minister positions (宰相/左丞相/右丞相) held by people from specific places (興化/興化軍) during Song Dynasty (960-1250), returning records 11-20.
+
+The second example retrieves all records for office ID 950 (知州) in Song Dynasty without place restrictions.
+</Note>
+
+### Response
+
+<ResponseField name="total" type="number">
+  Total number of records
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting record number of current data
+</ResponseField>
+
+<ResponseField name="end" type="number">
+  Ending record number of current data
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of office posting records
+  
+  <Expandable title="Office Posting Object Properties">
+    <ResponseField name="PersonID" type="number">
+      Person ID
+    </ResponseField>
+    
+    <ResponseField name="Name" type="string">
+      Person name in English
+    </ResponseField>
+    
+    <ResponseField name="NameChn" type="string">
+      Person name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="Sex" type="string">
+      Person gender (M/F)
+    </ResponseField>
+    
+    <ResponseField name="IndexYear" type="number">
+      Person's index year
+    </ResponseField>
+    
+    <ResponseField name="AddrID" type="number">
+      Person's place ID
+    </ResponseField>
+    
+    <ResponseField name="AddrType" type="string">
+      Place type in English
+    </ResponseField>
+    
+    <ResponseField name="AddrTypeChn" type="string">
+      Place type in Chinese
+    </ResponseField>
+    
+    <ResponseField name="AddrName" type="string">
+      Person's place name in English
+    </ResponseField>
+    
+    <ResponseField name="AddrChn" type="string">
+      Person's place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="X" type="number">
+      Longitude of person's place
+    </ResponseField>
+    
+    <ResponseField name="Y" type="number">
+      Latitude of person's place
+    </ResponseField>
+    
+    <ResponseField name="OfficeCode" type="number">
+      Office ID
+    </ResponseField>
+    
+    <ResponseField name="OfficeName" type="string">
+      Office name in English
+    </ResponseField>
+    
+    <ResponseField name="OfficeNameChn" type="string">
+      Office name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="FirstYear" type="number">
+      Office appointment start year
+    </ResponseField>
+    
+    <ResponseField name="LastYear" type="number">
+      Office appointment end year
+    </ResponseField>
+    
+    <ResponseField name="Dynasty" type="string">
+      Dynasty name
+    </ResponseField>
+    
+    <ResponseField name="OfficeAddrID" type="number">
+      Office place ID
+    </ResponseField>
+    
+    <ResponseField name="OfficeAddrName" type="string">
+      Office place name in English
+    </ResponseField>
+    
+    <ResponseField name="OfficeAddrChn" type="string">
+      Office place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="OfficeX" type="number">
+      Longitude of office place
+    </ResponseField>
+    
+    <ResponseField name="OfficeY" type="number">
+      Latitude of office place
+    </ResponseField>
+    
+    <ResponseField name="office_xy_count" type="number">
+      Number of office places
+    </ResponseField>
+    
+    <ResponseField name="PostingID" type="number">
+      Posting record ID
+    </ResponseField>
+    
+    <ResponseField name="ApptType" type="string">
+      Appointment type in English
+    </ResponseField>
+    
+    <ResponseField name="ApptTypeChn" type="string">
+      Appointment type in Chinese
+    </ResponseField>
+    
+    <ResponseField name="AssumedOffice" type="string">
+      Office assumption status in English
+    </ResponseField>
+    
+    <ResponseField name="AssumedOfficeChn" type="string">
+      Office assumption status in Chinese
+    </ResponseField>
+    
+    <ResponseField name="Notes" type="string">
+      Additional notes
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+    "total": 100,
+    "start": 11,
+    "end": 20,
+    "data": [
+        {
+            "PersonID": 332,
+            "Name": "Zhang Yong",
+            "NameChn": "張詠",
+            "Sex": "M",
+            "IndexYear": 1005,
+            "AddrID": 11273,
+            "AddrType": "Basic Affiliation",
+            "AddrTypeChn": "籍貫（基本地址）",
+            "AddrName": "Juancheng",
+            "AddrChn": "鄄城",
+            "X": 115.5583,
+            "Y": 35.61019,
+            "OfficeCode": 2383,
+            "OfficeName": "Left Assistant Director of the Department of Affairs(Hucker)",
+            "OfficeNameChn": "尚書省左丞",
+            "FirstYear": 1010,
+            "LastYear": 0,
+            "Dynasty": "未詳",
+            "OfficeAddrID": 0,
+            "OfficeAddrName": "[Unknown]",
+            "OfficeAddrChn": "[未詳]",
+            "OfficeX": "",
+            "OfficeY": "",
+            "office_xy_count": " 6",
+            "PostingID": 63598,
+            "ApptType": "",
+            "ApptTypeChn": "",
+            "AssumedOffice": "",
+            "AssumedOfficeChn": "",
+            "Notes": "LZL MasterFileLineID12259"
+        }
+    ]
+}
+```
+
+<Warning>
+**Important Notes:**
+
+- `office` parameter is **required** - office ID array cannot be empty
+- To query all appointments in a region without office filtering, use the [Query by Place](/api/query-by-place) endpoint instead
+- The `use*` parameters have higher priority than their corresponding data arrays
+- When `dateType=dynasty`, the query includes records from `dynStart` to `dynEnd` (inclusive)
+</Warning>

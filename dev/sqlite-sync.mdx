@@ -1,0 +1,703 @@
+---
+title: SQLite 週期同步
+description: 自動化 SQLite 資料庫匯出與 HuggingFace 同步，提供公開數據集下載服務
+---
+
+CBDB Online 提供自動化腳本，將生產環境的 MariaDB 數據庫匯出為 SQLite 格式，並同步到 HuggingFace 公開數據集供研究者下載使用。
+
+## 概述
+
+### 功能特點
+
+<CardGroup cols={2}>
+  <Card title="自動化匯出" icon="database">
+    - 匯出 77 個 CBDB 數據表
+    - 產生 SQLite 格式資料庫
+    - 生成 SHA-256 校驗和 metadata
+  </Card>
+  
+  <Card title="HuggingFace 同步" icon="cloud-upload">
+    - 自動上傳到公開數據集
+    - 歷史版本管理（按月歸檔）
+    - 提供 latest.zip 最新版本
+  </Card>
+</CardGroup>
+
+### 下載入口
+
+公開數據集位於 HuggingFace：[cbdb/cbdb-sqlite](https://huggingface.co/datasets/cbdb/cbdb-sqlite)
+
+<CodeGroup>
+```bash HuggingFace
+wget https://huggingface.co/datasets/cbdb/cbdb-sqlite/resolve/main/latest.zip
+```
+
+```bash 直接下載
+wget https://input.cbdb.fas.harvard.edu/latest.zip
+```
+</CodeGroup>
+
+## 腳本架構
+
+### 腳本位置
+
+- **匯出腳本**: `scripts/export-daily-sqlite.sh` - 將 MySQL/MariaDB 表格匯出為 SQLite
+- **同步腳本**: `scripts/weekly-sqlite-sync.sh` - 匯出、壓縮並上傳到 HuggingFace
+
+### 工作流程
+
+`weekly-sqlite-sync.sh` 執行以下步驟：
+
+<Steps>
+  <Step title="前置檢查">
+    確認 `zip`、`hf` 已安裝且 HuggingFace 認證有效
+  </Step>
+  
+  <Step title="匯出數據庫">
+    呼叫 `export-daily-sqlite.sh` 產生：
+    - `cbdb_YYYYMMDD.sqlite3` - SQLite 資料庫檔案
+    - `cbdb_YYYYMMDD.json` - Metadata (SHA-256, 時間戳等)
+  </Step>
+  
+  <Step title="壓縮檔案">
+    產生 `cbdb_YYYYMMDD.zip`（zip 內使用平面檔名，不包含絕對路徑）
+  </Step>
+  
+  <Step title="上傳到 HuggingFace">
+    以單一 commit 上傳以下檔案：
+    - `history/cbdb_YYYYMM/cbdb_YYYYMMDD.zip` - 歷史歸檔
+    - `latest.zip` - 最新版本
+    - `metadata/YYYY-MM/YYYY-MM-DD.json` - Metadata
+    - `latest.json` - 最新版本 metadata
+  </Step>
+  
+  <Step title="清理">
+    刪除所有臨時檔案（包括原始 SQLite 匯出檔與 metadata）
+  </Step>
+</Steps>
+
+## 前置安裝
+
+### Ubuntu 系統
+
+<CodeGroup>
+```bash 安裝 zip
+sudo apt-get install zip
+```
+
+```bash 安裝 HuggingFace CLI
+sudo apt-get install -y pipx
+pipx install huggingface-hub
+pipx ensurepath
+```
+</CodeGroup>
+
+<Note>
+安裝 `pipx ensurepath` 後需要重新載入 shell 配置或重新登入，以確保 `hf` 命令可用。
+</Note>
+
+## HuggingFace 認證設定
+
+### 認證方式
+
+腳本支持兩種認證方式（二擇一）：
+
+<Tabs>
+  <Tab title="hf auth login（推薦）">
+    使用 HuggingFace CLI 登入，token 安全存儲於 `~/.cache/huggingface/`：
+    
+    ```bash
+    hf auth login
+    ```
+    
+    驗證認證狀態：
+    
+    ```bash
+    hf auth status
+    ```
+  </Tab>
+  
+  <Tab title="HF_TOKEN 環境變數">
+    設置環境變數：
+    
+    ```bash
+    export HF_TOKEN=hf_你的token
+    ```
+    
+    <Warning>
+    此方式需要在每次 shell session 中設置，建議寫入 `~/.bashrc` 或使用 `hf auth login`。
+    </Warning>
+  </Tab>
+</Tabs>
+
+### Access Token 設定
+
+<Steps>
+  <Step title="前往 HuggingFace 設置">
+    訪問 [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
+  </Step>
+  
+  <Step title="創建 Token">
+    - 點擊「Create new token」
+    - 選擇「Fine-grained」類型
+    - 勾選「Repositories → Write」權限
+  </Step>
+  
+  <Step title="複製並認證">
+    複製 token 並在服務器上執行認證：
+    
+    ```bash
+    hf auth login
+    # 貼上 token
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+Token 應具備對 `cbdb/cbdb-sqlite` 數據集的 Write 權限。如果您不是數據集的 collaborator，請聯繫管理員添加權限。
+</Tip>
+
+## 匯出腳本詳解
+
+### export-daily-sqlite.sh
+
+此腳本負責從 MySQL/MariaDB 匯出 77 個 CBDB 數據表到 SQLite：
+
+#### 腳本配置
+
+```bash
+# 輸出目錄（默認：db-data）
+OUTPUT_DIR="${OUTPUT_DIR:-db-data}"
+
+# 源數據庫連接名稱（默認：mysql）
+SOURCE_DB="${SOURCE_DB:-mysql}"
+
+# 日期後綴
+DATE_SUFFIX=$(date +%Y%m%d)
+
+# 輸出檔案
+OUTPUT_FILE="${OUTPUT_DIR}/cbdb_${DATE_SUFFIX}.sqlite3"
+OUTPUT_META_FILE="${OUTPUT_DIR}/cbdb_${DATE_SUFFIX}.json"
+```
+
+#### 匯出的表格列表
+
+腳本匯出 77 個表格，包括：
+
+<AccordionGroup>
+  <Accordion title="人物相關表格 (9 個)">
+    - `BIOG_MAIN` - 人物主表
+    - `BIOG_ADDR_DATA` - 人物地址數據
+    - `BIOG_INST_DATA` - 人物機構數據
+    - `BIOG_SOURCE_DATA` - 人物來源數據
+    - `BIOG_TEXT_DATA` - 人物文本數據
+    - `ALTNAME_DATA` - 別名數據
+    - `KIN_DATA` - 親屬關係數據
+    - `ASSOC_DATA` - 關聯數據
+    - `MERGED_PERSON_DATA` - 合併人物數據
+  </Accordion>
+  
+  <Accordion title="任官相關表格 (6 個)">
+    - `POSTING_DATA` - 任官數據
+    - `POSTED_TO_OFFICE_DATA` - 任職官職數據
+    - `POSTED_TO_ADDR_DATA` - 任職地址數據
+    - `OFFICE_CODES` - 官職代碼
+    - `OFFICE_CATEGORIES` - 官職分類
+    - `OFFICE_TYPE_TREE` - 官職類型樹
+  </Accordion>
+  
+  <Accordion title="地址相關表格 (5 個)">
+    - `ADDR_CODES` - 地址代碼
+    - `ADDR_BELONGS_DATA` - 地址從屬數據
+    - `BIOG_ADDR_CODES` - 人物地址代碼
+    - `CHORONYM_CODES` - 地名代碼
+    - `COUNTRY_CODES` - 國家代碼
+  </Accordion>
+  
+  <Accordion title="代碼表 (30+ 個)">
+    包含各種代碼表如：
+    - `ALTNAME_CODES` - 別名類型代碼
+    - `APPOINTMENT_CODES` - 任命代碼
+    - `ASSOC_CODES` - 關聯代碼
+    - `STATUS_CODES` - 狀態代碼
+    - `EVENT_CODES` - 事件代碼
+    - `KINSHIP_CODES` - 親屬關係代碼
+    - 等 30+ 個代碼表
+  </Accordion>
+  
+  <Accordion title="其他表格">
+    - `DYNASTIES` - 朝代表
+    - `NIAN_HAO` - 年號表
+    - `GANZHI_CODES` - 干支代碼
+    - `TEXT_CODES` - 文本代碼
+    - `TEXT_INSTANCE_DATA` - 文本實例數據
+    - 等
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+完整列表請參考 `scripts/export-daily-sqlite.sh:35-113` 中的 `TABLES` 陣列。
+</Tip>
+
+#### 預處理步驟
+
+匯出前會執行以下預處理（寫回源數據庫）：
+
+```bash
+# 重建 BIOG_MAIN 索引年份
+php artisan cbdb:rebuild-index-year --no-interaction
+
+# 重建 BIOG_MAIN 索引地址
+php artisan cbdb:rebuild-index-address --no-interaction
+```
+
+<Note>
+這些預處理確保匯出的數據包含最新的索引字段，提升查詢性能。
+</Note>
+
+#### Metadata 格式
+
+匯出完成後會產生 JSON metadata：
+
+```json
+{
+  "sqlite_filename": "cbdb_20241223.sqlite3",
+  "sha256": "a1b2c3d4...",
+  "generated_at_utc": "2024-12-23T03:00:00Z",
+  "format": "sqlite3",
+  "huggingface_path": "history/cbdb_202412/cbdb_20241223.zip",
+  "huggingface_url": "https://huggingface.co/datasets/cbdb/cbdb-sqlite/resolve/main/history/cbdb_202412/cbdb_20241223.zip"
+}
+```
+
+## 同步腳本詳解
+
+### weekly-sqlite-sync.sh
+
+此腳本負責壓縮匯出的 SQLite 並上傳到 HuggingFace：
+
+#### 前置檢查
+
+```bash
+check_requirements() {
+    # 檢查 zip 命令
+    if ! command -v zip &> /dev/null; then
+        echo "錯誤: 缺少 zip"
+        exit 1
+    fi
+    
+    # 檢查 hf CLI
+    if ! command -v hf &> /dev/null; then
+        echo "錯誤: 缺少 hf (請安裝: pipx install huggingface-hub)"
+        exit 1
+    fi
+    
+    # 檢查 HuggingFace 認證
+    if ! hf auth whoami &> /dev/null; then
+        echo "錯誤: 未找到 HuggingFace 認證"
+        exit 1
+    fi
+}
+```
+
+#### 壓縮流程
+
+```bash
+# 壓縮為 zip（zip 內為平面檔名）
+zip -j -9 "$ZIP_FILE" "$SQLITE_FILE" "$META_FILE"
+```
+
+<Note>
+使用 `-j` 參數確保 zip 內只包含檔案名稱，不包含目錄路徑。使用 `-9` 參數進行最大壓縮。
+</Note>
+
+#### 上傳流程
+
+上傳使用單一 commit 包含所有檔案：
+
+```bash
+# 準備暫存目錄
+mkdir -p "${HF_STAGE_DIR}/history/${HF_MONTH}"
+cp "$ZIP_FILE" "${HF_STAGE_DIR}/${HF_ZIP_PATH}"
+cp "$ZIP_FILE" "${HF_STAGE_DIR}/latest.zip"
+
+if [ -f "$META_FILE" ]; then
+    mkdir -p "${HF_STAGE_DIR}/metadata/${META_MONTH}"
+    cp "$META_FILE" "${HF_STAGE_DIR}/${META_PATH}"
+    cp "$META_FILE" "${HF_STAGE_DIR}/latest.json"
+fi
+
+# 上傳整個目錄（所有檔案在同一個 commit）
+hf upload "$HF_DATASET_REPO" \
+    "$HF_STAGE_DIR" . \
+    --repo-type dataset \
+    --commit-message "Update CBDB SQLite (${META_DATE})"
+```
+
+#### 清理流程
+
+```bash
+cleanup() {
+    # 刪除暫存目錄
+    rm -rf "$HF_STAGE_DIR"
+    
+    # 刪除原始 SQLite 匯出檔
+    rm -f "$SQLITE_FILE"
+    
+    # 刪除原始 zip
+    rm -f "$ZIP_FILE"
+    
+    # 刪除 metadata
+    rm -f "$META_FILE"
+}
+```
+
+<Warning>
+清理函數會在腳本退出時自動執行（使用 `trap cleanup EXIT`），確保不會留下臨時檔案。
+</Warning>
+
+## 執行方式
+
+### 手動執行
+
+<Tabs>
+  <Tab title="完整同步流程">
+    ```bash
+    bash scripts/weekly-sqlite-sync.sh
+    ```
+    
+    此命令會執行完整流程：匯出 → 壓縮 → 上傳 → 清理
+  </Tab>
+  
+  <Tab title="僅匯出 SQLite（不上傳）">
+    ```bash
+    bash scripts/export-daily-sqlite.sh
+    ```
+    
+    此命令僅匯出 SQLite，不進行壓縮和上傳。生成的檔案位於 `db-data/` 目錄。
+  </Tab>
+</Tabs>
+
+### Cron 定時任務
+
+設置每週日凌晨 3 點自動執行：
+
+<Steps>
+  <Step title="編輯 crontab">
+    ```bash
+    crontab -e
+    ```
+  </Step>
+  
+  <Step title="添加定時任務">
+    ```bash
+    # 每週日凌晨 3 點執行（GMT+8）
+    0 3 * * 0 /path/to/cbdb-online-main-server/scripts/weekly-sqlite-sync.sh >> /var/log/cbdb-sqlite-sync.log 2>&1
+    ```
+  </Step>
+  
+  <Step title="驗證設置">
+    ```bash
+    # 查看 crontab 列表
+    crontab -l
+    ```
+  </Step>
+</Steps>
+
+<Note>
+Cron 執行時的環境變量可能與交互式 shell 不同。腳本已處理 `HOME` 和 `PATH` 環境變量，確保 `hf` 命令可用（位於 `~/.local/bin/`）。
+</Note>
+
+## 檔案組織結構
+
+HuggingFace 數據集的檔案組織結構：
+
+```
+cbdb-sqlite/
+├── latest.zip                          # 最新版本（符號連結）
+├── latest.json                         # 最新版本 metadata
+├── history/                            # 歷史歸檔
+│   ├── cbdb_202412/                   # 2024年12月
+│   │   ├── cbdb_20241201.zip
+│   │   ├── cbdb_20241208.zip
+│   │   └── cbdb_20241215.zip
+│   └── cbdb_202501/                   # 2025年1月
+│       └── cbdb_20250105.zip
+└── metadata/                           # Metadata 歸檔
+    ├── 2024-12/
+    │   ├── 2024-12-01.json
+    │   ├── 2024-12-08.json
+    │   └── 2024-12-15.json
+    └── 2025-01/
+        └── 2025-01-05.json
+```
+
+### 命名規則
+
+- **SQLite 檔案**: `cbdb_YYYYMMDD.sqlite3`
+- **Zip 壓縮檔**: `cbdb_YYYYMMDD.zip`
+- **Metadata 檔案**: `cbdb_YYYYMMDD.json`
+- **歷史目錄**: `history/cbdb_YYYYMM/`
+- **Metadata 目錄**: `metadata/YYYY-MM/`
+
+## 環境變數配置
+
+### 可選環境變數
+
+匯出腳本支持以下環境變數自定義：
+
+```bash
+# 輸出目錄（默認：db-data）
+export OUTPUT_DIR="/custom/path"
+
+# 源數據庫連接名稱（默認：mysql）
+export SOURCE_DB="production"
+
+# HuggingFace Token（如不使用 hf auth login）
+export HF_TOKEN="hf_你的token"
+```
+
+### Cron 環境配置
+
+Cron 任務可能需要額外的環境變數設置：
+
+```bash
+# 在 crontab 開頭添加
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+HOME=/home/username
+
+# 定時任務
+0 3 * * 0 /path/to/scripts/weekly-sqlite-sync.sh >> /var/log/cbdb-sqlite-sync.log 2>&1
+```
+
+<Tip>
+腳本會自動處理 `HOME` 和 `PATH` 環境變數，確保在 cron 環境中正常運行。
+</Tip>
+
+## 日誌與監控
+
+### 日誌輸出
+
+腳本執行時會輸出詳細日誌：
+
+```
+================================================
+CBDB SQLite 每週同步（HuggingFace）
+================================================
+時間: 2024-12-23 03:00:00
+
+環境資訊:
+  - USER: cbdb
+  - HOME: /home/cbdb
+  - HF 認證: hf auth login
+
+[1/4] 執行 SQLite 匯出腳本...
+匯出檔案: db-data/cbdb_20241223.sqlite3
+
+[2/4] 準備打包來源...
+
+[3/4] 壓縮為 cbdb_20241223.zip...
+壓縮完成，檔案大小: 1.2G
+
+[4/4] 上傳到 HuggingFace cbdb/cbdb-sqlite...
+上傳 history/cbdb_202412/cbdb_20241223.zip、latest.zip、metadata/2024-12/2024-12-23.json、latest.json...
+
+將 latest.zip 複製到 public 目錄...
+
+================================================
+同步完成!
+================================================
+目標: https://huggingface.co/datasets/cbdb/cbdb-sqlite
+狀態: 已上傳
+檔案大小: 1.2G
+時間: 2024-12-23 03:15:32
+================================================
+```
+
+### 日誌檔案位置
+
+Cron 任務的日誌會寫入指定的日誌檔案：
+
+```bash
+# 查看最近的同步日誌
+tail -f /var/log/cbdb-sqlite-sync.log
+
+# 查看特定日期的日誌
+grep "2024-12-23" /var/log/cbdb-sqlite-sync.log
+```
+
+### 監控要點
+
+定期檢查以下指標：
+
+- ✅ Cron 任務是否按時執行
+- ✅ HuggingFace 認證是否有效
+- ✅ 磁盤空間是否充足（至少需要 3GB 可用空間）
+- ✅ 上傳是否成功（檢查日誌中的「同步完成」訊息）
+- ✅ 臨時檔案是否正確清理
+
+## 故障排查
+
+### HuggingFace 認證失敗
+
+**錯誤訊息**：
+```
+錯誤: 未找到 HuggingFace 認證
+```
+
+**解決方案**：
+```bash
+# 重新登入
+hf auth login
+
+# 驗證認證狀態
+hf auth status
+
+# 或使用 Token 環境變數
+export HF_TOKEN=hf_你的token
+```
+
+### zip 命令未找到
+
+**錯誤訊息**：
+```
+錯誤: 缺少必要工具：
+  - zip (請安裝: sudo apt-get install zip)
+```
+
+**解決方案**：
+```bash
+sudo apt-get update
+sudo apt-get install zip
+```
+
+### hf 命令未找到
+
+**錯誤訊息**：
+```
+錯誤: 缺少必要工具：
+  - hf (請安裝: pipx install huggingface-hub)
+```
+
+**解決方案**：
+```bash
+# 安裝 pipx
+sudo apt-get install -y pipx
+
+# 安裝 huggingface-hub
+pipx install huggingface-hub
+
+# 確保 PATH 包含 ~/.local/bin
+pipx ensurepath
+
+# 重新載入 shell 或重新登入
+source ~/.bashrc
+```
+
+### 匯出失敗
+
+**錯誤訊息**：
+```
+找不到匯出檔案 db-data/cbdb_20241223.sqlite3
+```
+
+**解決方案**：
+1. 檢查 `export-daily-sqlite.sh` 的執行日誌
+2. 確認數據庫連接配置正確（`.env` 中的 `DB_CONNECTION` 和相關參數）
+3. 檢查磁盤空間是否充足
+4. 手動執行匯出腳本查看詳細錯誤：
+   ```bash
+   bash scripts/export-daily-sqlite.sh
+   ```
+
+### 上傳失敗
+
+**錯誤訊息**：
+```
+Error: Cannot upload to cbdb/cbdb-sqlite: permission denied
+```
+
+**解決方案**：
+1. 確認 HuggingFace Token 具備 Write 權限
+2. 確認您是數據集的 collaborator
+3. 聯繫數據集管理員添加權限
+
+### 磁盤空間不足
+
+**錯誤訊息**：
+```
+No space left on device
+```
+
+**解決方案**：
+```bash
+# 檢查磁盤使用情況
+df -h
+
+# 清理舊的 SQLite 匯出檔（如果未自動清理）
+rm -f db-data/cbdb_*.sqlite3
+rm -f db-data/cbdb_*.zip
+rm -f db-data/cbdb_*.json
+
+# 清理 Laravel 日誌（如果過大）
+truncate -s 0 storage/logs/laravel.log
+```
+
+<Warning>
+匯出和壓縮過程需要至少 3GB 可用磁盤空間。建議保持 5GB 以上可用空間。
+</Warning>
+
+## 最佳實踐
+
+### 定時任務建議
+
+- ✅ 選擇系統負載較低的時段（如凌晨）
+- ✅ 週期性檢查 cron 日誌確保任務正常執行
+- ✅ 設置日誌輪轉避免日誌文件過大
+- ✅ 在部署更新前手動執行測試
+
+### 安全考量
+
+- ✅ HuggingFace Token 使用 Fine-grained 類型，最小權限原則
+- ✅ 定期輪換 Token（建議每 6 個月）
+- ✅ 限制 Token 的存取範圍（僅 `cbdb/cbdb-sqlite` 數據集）
+- ✅ 使用 `hf auth login` 而非環境變數存儲 Token
+
+### 監控與告警
+
+建議設置以下監控：
+
+```bash
+#!/bin/bash
+# 監控腳本：檢查上次同步是否成功
+
+LOG_FILE="/var/log/cbdb-sqlite-sync.log"
+LAST_SUCCESS=$(grep -n "同步完成" "$LOG_FILE" | tail -1 | cut -d: -f1)
+LAST_ERROR=$(grep -n "錯誤" "$LOG_FILE" | tail -1 | cut -d: -f1)
+
+if [ "$LAST_ERROR" -gt "$LAST_SUCCESS" ]; then
+    echo "警告：最近一次同步失敗"
+    # 發送告警郵件或通知
+fi
+```
+
+## 相關資源
+
+<CardGroup cols={2}>
+  <Card title="生產部署" icon="server" href="/dev/deployment">
+    生產環境部署指南
+  </Card>
+  
+  <Card title="Docker 環境" icon="docker" href="/dev/docker">
+    Docker 開發環境設置
+  </Card>
+  
+  <Card title="HuggingFace 數據集" icon="cloud" href="https://huggingface.co/datasets/cbdb/cbdb-sqlite">
+    CBDB SQLite 公開數據集
+  </Card>
+  
+  <Card title="SQLite 數據發佈流程" icon="book" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/master/docs/SQLITE_DATA_RELEASE.md">
+    完整的 SQLite 數據發佈流程文檔
+  </Card>
+</CardGroup>

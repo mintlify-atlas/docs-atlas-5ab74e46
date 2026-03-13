@@ -1,0 +1,168 @@
+---
+title: 'Entry Paths'
+description: 'Query entry paths by category code or name'
+icon: 'door-open'
+---
+
+## Get Entry Path List by Category Code
+
+Retrieve entry paths under a specific entry path category code.
+
+### Endpoint
+
+```bash
+GET /api/entry_list
+```
+
+### Parameters
+
+<ParamField query="id" type="number" required>
+  Entry path category code
+</ParamField>
+
+<ParamField query="start" type="number">
+  Starting record number
+</ParamField>
+
+<ParamField query="list" type="number">
+  Number of records to return (default: all)
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+```bash Get all entry paths under category 04
+curl "https://input.cbdb.fas.harvard.edu/api/entry_list?id=04"
+```
+
+```bash Get all entry paths under subcategory 0403
+curl "https://input.cbdb.fas.harvard.edu/api/entry_list?id=0403"
+```
+</CodeGroup>
+
+### Response
+
+<ResponseField name="total" type="number">
+  Total number of records
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting record number of current data
+</ResponseField>
+
+<ResponseField name="end" type="number">
+  Ending record number of current data
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of entry path objects
+  
+  <Expandable title="Entry Path Object Properties">
+    <ResponseField name="eId" type="number">
+      Entry code (entry_code)
+    </ResponseField>
+    
+    <ResponseField name="eName" type="string">
+      Entry path name in English
+    </ResponseField>
+    
+    <ResponseField name="eNameChn" type="string">
+      Entry path name in Chinese
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+    "total": 100,
+    "start": 1,
+    "end": 2,
+    "data": [
+        {
+            "eId": "47",
+            "eName": "school: licentiate ",
+            "eNameChn": "學校：生員（庠生）"
+        },
+        {
+            "eId": "173",
+            "eName": "county school student",
+            "eNameChn": "縣學生員"
+        }
+    ]
+}
+```
+
+---
+
+## Search Entry Paths by Name
+
+Search for entry paths by Chinese or English name with exact or partial matching.
+
+### Endpoint
+
+```bash
+GET /api/entry_list_by_name
+```
+
+### Parameters
+
+<ParamField query="eName" type="string" required>
+  Entry path name (Chinese or English, URL-encoded)
+</ParamField>
+
+<ParamField query="start" type="number">
+  Starting record number
+</ParamField>
+
+<ParamField query="list" type="number">
+  Number of records to return
+</ParamField>
+
+<ParamField query="accurate" type="number">
+  Matching mode:
+  - `0`: Partial match (fuzzy search)
+  - `1`: Exact match
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+```bash Partial match search
+curl "https://input.cbdb.fas.harvard.edu/api/entry_list_by_name?eName=%E7%94%9F%E5%93%A1&start=1&list=2&accurate=0"
+```
+
+```bash Exact match search
+curl "https://input.cbdb.fas.harvard.edu/api/entry_list_by_name?eName=%E7%B8%A3%E5%AD%B8%E7%94%9F%E5%93%A1&start=1&list=2&accurate=1"
+```
+</CodeGroup>
+
+<Note>
+The first example searches for all entry paths containing "生員" (partial match).  
+The second example searches for entry paths exactly named "縣學生員" (exact match).
+</Note>
+
+### Response
+
+The response format is identical to the `/api/entry_list` endpoint.
+
+```json
+{
+    "total": 100,
+    "start": 0,
+    "end": 2,
+    "data": [
+        {
+            "eId": "47",
+            "eName": "school: licentiate ",
+            "eNameChn": "學校：生員（庠生）"
+        },
+        {
+            "eId": "173",
+            "eName": "county school student",
+            "eNameChn": "縣學生員"
+        }
+    ]
+}
+```

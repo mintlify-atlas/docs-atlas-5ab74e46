@@ -1,0 +1,339 @@
+---
+title: User Management
+description: Managing users through the cbdb:manage-user command
+icon: users
+---
+
+CBDB Online provides a comprehensive command-line tool for managing user accounts, including creating new users, updating existing ones, and listing all users in the system.
+
+## User Management Command
+
+The primary tool for user management is the `cbdb:manage-user` Artisan command, located at `app/Console/Commands/ManageUser.php`.
+
+### Basic Usage
+
+<CodeGroup>
+```bash Interactive Mode
+php artisan cbdb:manage-user
+```
+
+```bash Command-Line Mode
+php artisan cbdb:manage-user --email=user@example.com --name="User Name" --password=secret --active=1 --role=regular
+```
+
+```bash List All Users
+php artisan cbdb:manage-user --list
+```
+</CodeGroup>
+
+## User Roles
+
+CBDB Online supports four distinct user roles, each with different permission levels:
+
+<CardGroup cols={2}>
+  <Card title="Regular User" icon="user">
+    Standard user with basic access permissions
+    
+    **Role Code:** `regular`
+  </Card>
+  
+  <Card title="Expert" icon="graduation-cap">
+    Users with specialized knowledge and extended editing capabilities
+    
+    **Role Code:** `expert`
+  </Card>
+  
+  <Card title="Crowdsourcing" icon="users">
+    Users participating in collaborative data entry projects
+    
+    **Role Code:** `crowdsourcing`
+  </Card>
+  
+  <Card title="Super Admin" icon="shield-halved">
+    System administrators with full access and restore capabilities
+    
+    **Role Code:** `super-admin`
+  </Card>
+</CardGroup>
+
+## User Status
+
+Each user account has one of three activation statuses:
+
+| Status Code | Chinese Name | Description |
+|------------|-------------|-------------|
+| `0` | 未激活 | Inactive - account is disabled |
+| `1` | 激活 | Active - account is enabled |
+| `2` | 預留 | Reserved - account is reserved for future use |
+
+## Creating a New User
+
+### Interactive Mode
+
+<Steps>
+  <Step title="Start the Command">
+    Run the command without options:
+    
+    ```bash
+    php artisan cbdb:manage-user
+    ```
+  </Step>
+  
+  <Step title="Provide Email Address">
+    Enter the user's email address when prompted. If the email already exists, you'll be guided to the update flow instead.
+  </Step>
+  
+  <Step title="Enter User Details">
+    Provide the following information:
+    - **Name** (required, minimum 1 character)
+    - **Password** (required, minimum 6 characters)
+    - **Activation Status** (選擇：未激活, 激活, 預留)
+    - **Role** (選擇：一般用戶, 專家, 眾包用戶, 系統管理員)
+  </Step>
+  
+  <Step title="Confirm Creation">
+    Review the summary table showing the newly created user's information, including ID, name, email, status, role, and creation timestamp.
+  </Step>
+</Steps>
+
+### Command-Line Mode
+
+For automation or scripting, you can provide all parameters directly:
+
+```bash
+php artisan cbdb:manage-user \
+  --email=newuser@example.com \
+  --name="New User" \
+  --password=securepassword123 \
+  --active=1 \
+  --role=regular
+```
+
+<Note>
+  The password must be at least 6 characters long. It will be automatically hashed using Laravel's `Hash::make()` before storage.
+</Note>
+
+## Updating an Existing User
+
+When you run the command with an existing email address, the tool automatically switches to update mode.
+
+### Interactive Update
+
+<Steps>
+  <Step title="Specify Existing Email">
+    ```bash
+    php artisan cbdb:manage-user --email=existing@example.com
+    ```
+    
+    The command will display: "找到現有用戶: [Name] (email@example.com)"
+  </Step>
+  
+  <Step title="Select Fields to Update">
+    You'll be prompted to confirm which fields to update:
+    - Update user name? (current: [name])
+    - Update password?
+    - Update activation status? (current: [status])
+    - Update user role? (current: [role])
+  </Step>
+  
+  <Step title="Provide New Values">
+    For each field you choose to update, enter the new value. The system will show current values as defaults.
+  </Step>
+  
+  <Step title="Review Changes">
+    A summary table displays the updated user information.
+  </Step>
+</Steps>
+
+### Command-Line Update
+
+```bash
+# Update only specific fields
+php artisan cbdb:manage-user \
+  --email=existing@example.com \
+  --role=expert \
+  --active=1
+
+# Update password
+php artisan cbdb:manage-user \
+  --email=existing@example.com \
+  --password=newpassword123
+```
+
+<Tip>
+  Only the fields you specify will be updated. Omitted fields remain unchanged.
+</Tip>
+
+## Listing All Users
+
+To view all users in the system:
+
+```bash
+php artisan cbdb:manage-user --list
+```
+
+This displays a table with the following columns:
+
+- **ID** - User's database ID
+- **名稱** - User's display name
+- **Email** - User's email address
+- **狀態** - Activation status (未激活/激活/預留)
+- **角色** - User role (一般用戶/專家/眾包用戶/系統管理員)
+
+The output shows: "共找到 {count} 個用戶" at the top of the table.
+
+## Command Options Reference
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `--email` | string | User email address (required for create/update) |
+| `--name` | string | User's display name |
+| `--password` | string | User password (min 6 characters) |
+| `--active` | integer | Activation status: 0 (inactive), 1 (active), 2 (reserved) |
+| `--role` | string | User role: `regular`, `expert`, `crowdsourcing`, `super-admin` |
+| `--list` | flag | List all users in the system |
+
+## Implementation Details
+
+The user management command (`app/Console/Commands/ManageUser.php`) implements several important features:
+
+### Email Validation
+
+All email addresses are validated using Laravel's validator:
+
+```php
+Validator::make(['email' => $email], [
+    'email' => 'required|email',
+]);
+```
+
+### Password Hashing
+
+Passwords are automatically hashed using Laravel's Hash facade before storage:
+
+```php
+'password' => Hash::make($password)
+```
+
+### User Model Constants
+
+The command uses constants defined in the `User` model:
+
+```php
+// Status constants
+User::STATUS_INACTIVE  // 0
+User::STATUS_ACTIVE    // 1
+User::STATUS_RESERVED  // 2
+
+// Role constants
+User::ROLE_REGULAR         // 0
+User::ROLE_EXPERT          // 1
+User::ROLE_CROWDSOURCING   // 2
+User::ROLE_SUPER_ADMIN     // 1 (with is_active=1)
+```
+
+### Confirmation Token
+
+New users are automatically assigned a random confirmation token:
+
+```php
+'confirmation_token' => Str::random(32)
+```
+
+## Best Practices
+
+<Warning>
+  **Security Considerations**
+  
+  - Use strong passwords (minimum 6 characters, but longer is recommended)
+  - Regularly review user accounts using `--list`
+  - Disable inactive accounts by setting `--active=0`
+  - Grant super-admin role only to trusted personnel
+</Warning>
+
+<Tip>
+  **Automation Tips**
+  
+  - Use command-line mode for scripting bulk user creation
+  - Store user management scripts in version control
+  - Test user creation in development before running in production
+</Tip>
+
+## Common Workflows
+
+### Creating a Super Admin
+
+```bash
+php artisan cbdb:manage-user \
+  --email=admin@cbdb.fas.harvard.edu \
+  --name="CBDB Administrator" \
+  --password=verySecurePassword123 \
+  --active=1 \
+  --role=super-admin
+```
+
+### Deactivating a User Account
+
+```bash
+php artisan cbdb:manage-user \
+  --email=user@example.com \
+  --active=0
+```
+
+### Promoting a User to Expert
+
+```bash
+php artisan cbdb:manage-user \
+  --email=user@example.com \
+  --role=expert
+```
+
+### Resetting a User's Password
+
+```bash
+php artisan cbdb:manage-user \
+  --email=user@example.com \
+  --password=newTempPassword123
+```
+
+## Troubleshooting
+
+### "Email 是必填項" Error
+
+This error occurs when no email is provided. Solution:
+
+```bash
+# Provide email via option
+php artisan cbdb:manage-user --email=user@example.com
+
+# Or run in interactive mode and enter when prompted
+php artisan cbdb:manage-user
+```
+
+### "Email 格式無效" Error
+
+The email address format is invalid. Ensure it follows standard email format:
+
+```bash
+# ✓ Valid
+php artisan cbdb:manage-user --email=user@example.com
+
+# ✗ Invalid
+php artisan cbdb:manage-user --email=userexample.com
+```
+
+### "密碼必須至少 6 個字符" Error
+
+The password is too short. Use a password with at least 6 characters:
+
+```bash
+php artisan cbdb:manage-user \
+  --email=user@example.com \
+  --password=secret123  # At least 6 characters
+```
+
+## Related Documentation
+
+- [Operations Log](/admin/operations-log) - View user activities and changes
+- [User Privileges Documentation](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/docs/USER_PRIVILEGES.md)
+- [AGENTS.md - User Management Section](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/AGENTS.md)

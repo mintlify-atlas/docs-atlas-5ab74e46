@@ -1,0 +1,270 @@
+---
+title: 'Query by Place'
+description: 'Query people by place with multiple place type filters'
+icon: 'magnifying-glass-location'
+---
+
+## Query People by Place
+
+Query people associated with specific places through various relationship types (individual, entry, office posting, etc.).
+
+### Endpoint
+
+```bash
+POST /api/query_place
+```
+
+<Note>
+This endpoint uses **POST** method with `Content-Type: application/json`.
+</Note>
+
+### Request Body Parameters
+
+<ParamField body="peoplePlace" type="array" required>
+  Array of place IDs to query
+</ParamField>
+
+<ParamField body="placeType" type="array" required>
+  Array of place relationship types to include:
+  - `individual`: Person's place
+  - `entry`: Entry path place
+  - `association`: Social association place
+  - `officePosting`: Office posting place
+  - `institutional`: Institutional affiliation place
+  - `kinship`: Kinship-related place
+  - `associate`: Associate's place
+</ParamField>
+
+<ParamField body="useDate" type="number" default={0}>
+  Enable date filtering:
+  - `1`: Enable
+  - `0`: Disable (ignores all date parameters)
+</ParamField>
+
+<ParamField body="dateType" type="string">
+  Date type (only used if `useDate=1`):
+  - `index`: Index year
+  - `dynasty`: Dynasty
+</ParamField>
+
+<ParamField body="dateStartTime" type="number">
+  Start year (only used if `dateType=index`)
+</ParamField>
+
+<ParamField body="dateEndTime" type="number">
+  End year (only used if `dateType=index`)
+</ParamField>
+
+<ParamField body="dynStart" type="number">
+  Dynasty start code (only used if `dateType=dynasty`)
+</ParamField>
+
+<ParamField body="dynEnd" type="number">
+  Dynasty end code (only used if `dateType=dynasty`)
+</ParamField>
+
+<ParamField body="useXy" type="number" default={0}>
+  Include coordinate data:
+  - `1`: Include
+  - `0`: Exclude
+</ParamField>
+
+<ParamField body="start" type="number" default={1}>
+  Starting record number (1-based)
+</ParamField>
+
+<ParamField body="list" type="number" default={10}>
+  Number of records to return
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+```bash Query by index year
+curl -X POST "https://input.cbdb.fas.harvard.edu/api/query_place" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "peoplePlace": [2928, 10522, 12553, 13947, 13949],
+    "placeType": ["individual", "entry", "officePosting"],
+    "useDate": 1,
+    "dateType": "index",
+    "dateStartTime": 1200,
+    "dateEndTime": 1644,
+    "dynStart": null,
+    "dynEnd": null,
+    "useXy": 1,
+    "start": 1,
+    "list": 10
+  }'
+```
+
+```bash Query by dynasty
+curl -X POST "https://input.cbdb.fas.harvard.edu/api/query_place" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "peoplePlace": [2928, 10522, 12553, 13947, 13949],
+    "placeType": ["individual", "entry", "officePosting"],
+    "useDate": 1,
+    "dateType": "dynasty",
+    "dateStartTime": null,
+    "dateEndTime": null,
+    "dynStart": 17,
+    "dynEnd": 22,
+    "useXy": 1,
+    "start": 1,
+    "list": 10
+  }'
+```
+</CodeGroup>
+
+<Note>
+The first example queries people from specified places (individual, entry, or office posting) during 1200-1644 CE.  
+The second example queries people from specified places during Jin Dynasty to Qing Dynasty (dynasties 17-22).
+</Note>
+
+### Response
+
+<ResponseField name="total" type="number">
+  Total number of records
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting record number of current data
+</ResponseField>
+
+<ResponseField name="end" type="number">
+  Ending record number of current data
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of person-place records
+  
+  <Expandable title="Person-Place Record Properties">
+    <ResponseField name="PersonID" type="number">
+      Person ID
+    </ResponseField>
+    
+    <ResponseField name="Name" type="string">
+      Person name in English
+    </ResponseField>
+    
+    <ResponseField name="NameChn" type="string">
+      Person name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="Sex" type="string">
+      Person gender (M/F)
+    </ResponseField>
+    
+    <ResponseField name="IndexYear" type="number">
+      Person's index year
+    </ResponseField>
+    
+    <ResponseField name="IndexYearType" type="string">
+      Index year type in English
+    </ResponseField>
+    
+    <ResponseField name="IndexYearTypeChn" type="string">
+      Index year type in Chinese
+    </ResponseField>
+    
+    <ResponseField name="IndexYearCode" type="string">
+      Index year type code
+    </ResponseField>
+    
+    <ResponseField name="PlaceName" type="string">
+      Place name in English
+    </ResponseField>
+    
+    <ResponseField name="PlaceNameChn" type="string">
+      Place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="PlaceAssocName" type="string">
+      Place-associated person name in English
+    </ResponseField>
+    
+    <ResponseField name="PlaceAssocChn" type="string">
+      Place-associated person name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="PlaceAssocStart" type="number">
+      Place association start year
+    </ResponseField>
+    
+    <ResponseField name="PlaceAssocEnd" type="number">
+      Place association end year
+    </ResponseField>
+    
+    <ResponseField name="PlaceType" type="string">
+      Place relationship category
+    </ResponseField>
+    
+    <ResponseField name="PlaceTypeDetail" type="string">
+      Detailed place relationship type in English
+    </ResponseField>
+    
+    <ResponseField name="PlaceTypeDetailChn" type="string">
+      Detailed place relationship type in Chinese
+    </ResponseField>
+    
+    <ResponseField name="X" type="number">
+      Longitude of place
+    </ResponseField>
+    
+    <ResponseField name="Y" type="number">
+      Latitude of place
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+    "total": 100,
+    "start": 1,
+    "end": 10,
+    "data": [
+        {
+            "PersonID": 12345,
+            "Name": "Zhang San",
+            "NameChn": "張三",
+            "Sex": "M",
+            "IndexYear": 1300,
+            "IndexYearType": "Birth Year",
+            "IndexYearTypeChn": "出生年",
+            "IndexYearCode": "01",
+            "PlaceName": "Hangzhou Fu",
+            "PlaceNameChn": "杭州府",
+            "PlaceAssocName": "",
+            "PlaceAssocChn": "",
+            "PlaceAssocStart": 0,
+            "PlaceAssocEnd": 0,
+            "PlaceType": "individual",
+            "PlaceTypeDetail": "Basic Affiliation",
+            "PlaceTypeDetailChn": "籍貫（基本地址）",
+            "X": 120.1551,
+            "Y": 30.2741
+        }
+    ]
+}
+```
+
+<Warning>
+**Important Notes:**
+
+- `useDate` parameter has higher priority - when set to `0`, all date-related parameters are ignored
+- When `dateType=index`, only `dateStartTime` and `dateEndTime` are used
+- When `dateType=dynasty`, only `dynStart` and `dynEnd` are used (other date fields are ignored)
+- Multiple place types can be specified to get comprehensive results about a person's connections to places
+</Warning>
+
+<Note>
+**Use Case:**
+
+This endpoint is ideal for:
+- Finding all people associated with specific geographic locations
+- Analyzing population distribution across different place types
+- Regional historical research with flexible time period filtering
+</Note>

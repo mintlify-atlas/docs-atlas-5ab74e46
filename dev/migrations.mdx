@@ -1,0 +1,468 @@
+---
+title: 數據庫 Migration 編寫
+description: 創建 MySQL/SQLite 兼容的 Laravel Migration，使用 is_mysql()/is_sqlite() helpers 處理數據庫差異
+---
+
+## 概述
+
+本專案的所有 Migration **必須同時兼容 MySQL/MariaDB 和 SQLite**。這是核心規範，確保：
+- **生產環境**（MariaDB 10.3.39）正常運行
+- **測試環境**（SQLite）可靠執行 PHPUnit 測試
+- **CI/CD**（SQLite in-memory）快速驗證
+
+<Warning>
+**核心規範**
+
+- ✅ 使用 `is_mysql()` 和 `is_sqlite()` helper functions
+- ✅ 優先使用 Laravel Schema Builder（自動兼容）
+- ❌ 禁止直接使用 `DB::getDriverName()` 判斷數據庫類型
+- ❌ 避免使用數據庫專屬功能（ngram parser、MariaDB 插件等）
+</Warning>
+
+## 為什麼需要兼容性？
+
+本專案在不同環境使用不同數據庫：
+
+| 環境 | 數據庫 | 用途 |
+|------|--------|------|
+| **生產環境** | MariaDB 10.3.39 | 主要業務數據存儲 |
+| **測試環境** | SQLite | PHPUnit 單元測試和功能測試 |
+| **CI/CD** | SQLite in-memory | 自動化測試流水線 |
+
+如果 Migration 只針對 MySQL 編寫，測試環境將無法運行，導致：
+- CI/CD 失敗
+- 本地測試不穩定
+- 開發效率降低
+
+## Helper Functions
+
+項目提供了標準的 helper functions（位於 `database/migrations/helpers.php`）：
+
+### is_mysql()
+
+檢查當前數據庫是否為 MySQL/MariaDB：
+
+```php
+if (is_mysql()) {
+    // MySQL 特定的優化
+    DB::statement("ALTER TABLE users ENGINE=InnoDB ROW_FORMAT=DYNAMIC");
+}
+```
+
+### is_sqlite()
+
+檢查當前數據庫是否為 SQLite：
+
+```php
+if (is_sqlite()) {
+    // 移除 SQLite 不支持的語法
+    $sql = preg_replace('/COMMENT\s+\'[^\']*\'/i', '', $sql);
+}
+```
+
+### disable_foreign_keys() / enable_foreign_keys()
+
+禁用/啟用外鍵約束檢查（兼容兩種數據庫）：
+
+```php
+disable_foreign_keys();
+
+try {
+    // 修改有外鍵約束的表
+    Schema::table('posts', function (Blueprint $table) {
+        $table->dropForeign(['user_id']);
+        $table->unsignedBigInteger('user_id')->change();
+        $table->foreign('user_id')->references('id')->on('users');
+    });
+} finally {
+    enable_foreign_keys();
+}
+```
+
+<Note>
+❌ **不要使用** `DB::getDriverName() === 'sqlite'`
+
+✅ **請使用** `is_sqlite()` 保持代碼一致性
+</Note>
+
+## 常見兼容性問題
+
+### 問題 1：COMMENT 注釋
+
+SQLite **不支持** `COMMENT` 語法。
+
+<CodeGroup>
+```php ❌ 錯誤
+DB::statement("
+    CREATE TABLE users (
+        id INT PRIMARY KEY COMMENT 'User ID',
+        name VARCHAR(255) COMMENT 'User name'
+    )
+");
+```
+
+```php ✅ 正確
+public function up(): void {
+    $sql = "
+        CREATE TABLE users (
+            id INT PRIMARY KEY COMMENT 'User ID',
+            name VARCHAR(255) COMMENT 'User name'
+        )
+    ";
+
+    if (is_sqlite()) {
+        // 移除所有 COMMENT 子句
+        $sql = preg_replace('/COMMENT\s+\'[^\']*\'/i', '', $sql);
+    }
+
+    DB::statement($sql);
+}
+```
+</CodeGroup>
+
+### 問題 2：ENGINE 和 ROW_FORMAT
+
+SQLite **不支持** `ENGINE` 和 `ROW_FORMAT` 設置。
+
+<CodeGroup>
+```php ✅ 方式 1：條件性執行
+public function up(): void {
+    Schema::create('users', function (Blueprint $table) {
+        $table->id();
+        $table->string('name');
+    });
+
+    // 僅在 MySQL 執行
+    if (is_mysql()) {
+        DB::statement("ALTER TABLE users ENGINE=InnoDB ROW_FORMAT=DYNAMIC");
+    }
+}
+```
+
+```php ✅ 方式 2：從 SQL 中移除
+public function up(): void {
+    $sql = "CREATE TABLE users (id INT) ENGINE=InnoDB ROW_FORMAT=DYNAMIC";
+
+    if (is_sqlite()) {
+        $sql = preg_replace('/ENGINE\s*=\s*[a-zA-Z0-9_]+/i', '', $sql);
+        $sql = preg_replace('/ROW_FORMAT\s*=\s*[a-zA-Z0-9_]+/i', '', $sql);
+    }
+
+    DB::statement($sql);
+}
+```
+</CodeGroup>
+
+### 問題 3：索引類型提示（USING BTREE）
+
+SQLite **不支持** `USING BTREE` 等索引類型提示。
+
+<CodeGroup>
+```php ❌ 錯誤
+DB::statement("
+    CREATE TABLE users (
+        id INT,
+        name VARCHAR(255),
+        KEY idx_name (name) USING BTREE
+    )
+");
+```
+
+```php ✅ 正確：移除索引提示
+public function up(): void {
+    $sql = "
+        CREATE TABLE users (
+            id INT,
+            name VARCHAR(255),
+            KEY idx_name (name) USING BTREE
+        )
+    ";
+
+    if (is_sqlite()) {
+        // 移除 USING BTREE
+        $sql = preg_replace('/USING\s+BTREE/i', '', $sql);
+    }
+
+    DB::statement($sql);
+}
+```
+
+```php ✅ 更好：使用 Schema Builder
+Schema::create('users', function (Blueprint $table) {
+    $table->id();
+    $table->string('name');
+    $table->index('name');  // Laravel 自動處理兼容性
+});
+```
+</CodeGroup>
+
+### 問題 4：外鍵約束檢查
+
+在 MySQL 中，調整主鍵/索引/欄位前若未先移除相關外鍵，會直接報錯導致 migrate 失敗。
+
+```php ✅ 正確：使用 helper functions
+public function up(): void {
+    disable_foreign_keys();
+
+    try {
+        // 修改有外鍵約束的表
+        Schema::table('posts', function (Blueprint $table) {
+            $table->dropForeign(['user_id']);
+            $table->unsignedBigInteger('user_id')->change();
+            $table->foreign('user_id')->references('id')->on('users');
+        });
+    } finally {
+        enable_foreign_keys();
+    }
+}
+```
+
+## Migration 模板
+
+### 創建新表（推薦方式）
+
+優先使用 **Laravel Schema Builder**，大多數情況下自動兼容：
+
+```php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
+
+return new class extends Migration {
+    /**
+     * Run the migrations.
+     */
+    public function up(): void {
+        // ========================================
+        // 方式 1：使用 Schema Builder（推薦）
+        // ========================================
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 255);
+            $table->string('email', 255)->unique();
+            $table->timestamps();
+
+            // Laravel 自動處理索引兼容性
+            $table->index('name');
+        });
+
+        // MySQL 特定的優化（可選）
+        if (is_mysql()) {
+            DB::statement("ALTER TABLE users ENGINE=InnoDB ROW_FORMAT=DYNAMIC");
+        }
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void {
+        Schema::dropIfExists('users');
+    }
+};
+```
+
+### 需要原始 SQL 時的兼容性處理
+
+```php
+public function up(): void {
+    $sql = "
+        CREATE TABLE logs (
+            id INT AUTO_INCREMENT PRIMARY KEY COMMENT '日志ID',
+            message TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            KEY idx_created (created_at) USING BTREE
+        ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC
+    ";
+
+    if (is_sqlite()) {
+        // 移除 SQLite 不支持的語法
+        $sql = preg_replace('/COMMENT\s+\'[^\']*\'/i', '', $sql);
+        $sql = preg_replace('/ENGINE\s*=\s*[a-zA-Z0-9_]+/i', '', $sql);
+        $sql = preg_replace('/ROW_FORMAT\s*=\s*[a-zA-Z0-9_]+/i', '', $sql);
+        $sql = preg_replace('/USING\s+BTREE/i', '', $sql);
+    }
+
+    DB::statement($sql);
+}
+```
+
+### 修改現有表
+
+```php
+public function up(): void {
+    Schema::table('users', function (Blueprint $table) {
+        // ✅ 添加新欄位
+        $table->string('phone', 20)->nullable()->after('email');
+
+        // ✅ 添加索引
+        $table->index('phone');
+    });
+}
+
+public function down(): void {
+    Schema::table('users', function (Blueprint $table) {
+        // ✅ 先刪除索引
+        $table->dropIndex(['phone']);
+
+        // ✅ 再刪除欄位
+        $table->dropColumn('phone');
+    });
+}
+```
+
+## 複合主鍵表的 Migration
+
+<Warning>
+**重要**：Laravel Eloquent 官方不支持複合主鍵，使用 Query Builder (`DB::table()`) 操作這些表。
+</Warning>
+
+```php
+public function up(): void {
+    Schema::create('altname_data', function (Blueprint $table) {
+        // ✅ 定義字段
+        $table->integer('c_personid');
+        $table->integer('c_sequence');
+        $table->string('c_alt_name_chn', 255);
+        $table->string('c_alt_name_type_code', 10);
+        $table->text('c_notes')->nullable();
+        $table->timestamps();
+
+        // ✅ 定義複合主鍵
+        $table->primary([
+            'c_personid',
+            'c_sequence',
+            'c_alt_name_chn',
+            'c_alt_name_type_code'
+        ], 'altname_pk');
+
+        // ✅ 添加索引
+        $table->index('c_personid');
+        $table->index('c_alt_name_type_code');
+    });
+}
+```
+
+## 測試兼容性
+
+### 在 SQLite 環境測試
+
+```bash
+# 方式 1：使用 --database 參數
+php artisan migrate:fresh --database=sqlite
+
+# 方式 2：修改 .env 後執行
+# DB_CONNECTION=sqlite
+php artisan migrate:fresh
+
+# 回滾測試
+php artisan migrate:rollback --database=sqlite
+```
+
+### 運行 PHPUnit 測試
+
+```bash
+./vendor/bin/phpunit
+```
+
+所有測試應該通過，驗證 Migration 在 SQLite 環境正常工作。
+
+## Migration 檢查清單
+
+在提交 Migration 之前，請確認：
+
+<Steps>
+  <Step title="使用正確的 Helper Functions">
+    - [ ] 使用 `is_mysql()` 和 `is_sqlite()` 而非 `DB::getDriverName()`
+  </Step>
+  
+  <Step title="處理 SQLite 不支持的語法">
+    - [ ] 處理 `COMMENT` 子句
+    - [ ] 處理 `ENGINE` 和 `ROW_FORMAT`
+    - [ ] 處理 `USING BTREE` 等索引提示
+  </Step>
+  
+  <Step title="測試兼容性">
+    - [ ] 在 SQLite 環境運行 `php artisan migrate`
+    - [ ] 所有測試通過 `./vendor/bin/phpunit`
+  </Step>
+  
+  <Step title="檢查外鍵處理">
+    - [ ] 修改有外鍵的表時使用 `disable_foreign_keys()` / `enable_foreign_keys()`
+  </Step>
+</Steps>
+
+## 常用字段類型
+
+### 字符串類型
+
+```php
+$table->string('name', 255);           // VARCHAR(255)
+$table->text('description');            // TEXT
+$table->char('code', 10);              // CHAR(10)
+$table->binary('data');                 // BLOB
+```
+
+### 數字類型
+
+```php
+$table->integer('count');               // INT
+$table->bigInteger('big_count');        // BIGINT
+$table->tinyInteger('is_active');       // TINYINT
+$table->decimal('price', 10, 2);        // DECIMAL(10,2)
+$table->float('rating', 8, 2);          // FLOAT
+```
+
+### 日期時間類型
+
+```php
+$table->timestamp('created_at');        // TIMESTAMP
+$table->datetime('published_at');       // DATETIME
+$table->date('birth_date');             // DATE
+$table->time('start_time');             // TIME
+$table->timestamps();                   // created_at, updated_at
+```
+
+## 避免的模式
+
+### ❌ 不要使用數據庫專屬功能
+
+```php
+// ❌ 壞：MySQL 專屬的 ngram parser
+DB::statement('
+    CREATE FULLTEXT INDEX idx_name
+    ON table_name(name) WITH PARSER ngram
+');
+
+// ❌ 壞：MariaDB 專屬插件
+DB::statement("INSTALL SONAME 'ha_spider'");
+```
+
+### ❌ 不要修改基線 Migration
+
+```php
+// ❌ 壞：直接修改已執行的基線 migration
+// 文件：2025_01_01_000000_import_cbdb_schema.php
+
+// ✅ 好：創建新的增量 migration
+php artisan make:migration add_column_to_example_table
+```
+
+## 參考資料
+
+<CardGroup cols={2}>
+  <Card title="Migration Guide Skill" icon="book" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/main/.claude/skills/migration-guide.md">
+    完整的 Migration 編寫指南
+  </Card>
+  <Card title="helpers.php" icon="code" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/main/database/migrations/helpers.php">
+    Helper functions 詳細文檔
+  </Card>
+  <Card title="AGENTS.md" icon="robot" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/main/AGENTS.md">
+    AI 代理開發指南
+  </Card>
+  <Card title="DATABASE.md" icon="database" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/main/DATABASE.md">
+    數據庫完整指南
+  </Card>
+</CardGroup>

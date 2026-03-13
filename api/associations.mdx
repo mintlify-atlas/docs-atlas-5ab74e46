@@ -1,0 +1,729 @@
+---
+title: 'Associations'
+description: 'Query social associations and networks'
+icon: 'diagram-project'
+---
+
+## Get Association Types
+
+Retrieve all social associations under a specific association type code.
+
+### Endpoint
+
+```bash
+GET /api/get_assoc
+```
+
+### Parameters
+
+<ParamField query="aType" type="number" required>
+  Association type code
+</ParamField>
+
+### Example Request
+
+```bash
+curl "https://input.cbdb.fas.harvard.edu/api/get_assoc?aType=0406"
+```
+
+<Note>
+This example retrieves all social associations under the "薦舉保任" (Recommendation) category.
+</Note>
+
+### Response
+
+<ResponseField name="total" type="number">
+  Total number of records
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting record number of current data
+</ResponseField>
+
+<ResponseField name="end" type="number">
+  Ending record number of current data
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of association objects
+  
+  <Expandable title="Association Object Properties">
+    <ResponseField name="aId" type="number">
+      Association code
+    </ResponseField>
+    
+    <ResponseField name="aName" type="string">
+      Association name in English
+    </ResponseField>
+    
+    <ResponseField name="aNameChn" type="string">
+      Association name in Chinese
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+    "total": 10,
+    "start": 1,
+    "end": 2,
+    "data": [
+        {
+            "aId": "351",
+            "aName": "Posthumous titular office prosposed for",
+            "aNameChn": "提議封贈Y"
+        }
+    ]
+}
+```
+
+---
+
+## Search Associations by Name
+
+Search for associations by Chinese or English name using fuzzy matching.
+
+### Endpoint
+
+```bash
+GET /api/find_assoc
+```
+
+### Parameters
+
+<ParamField query="aName" type="string" required>
+  Association name (Chinese or English, URL-encoded)
+</ParamField>
+
+### Example Request
+
+```bash
+curl "https://input.cbdb.fas.harvard.edu/api/find_assoc?aName=%E9%96%80%E4%BA%BA"
+```
+
+<Note>
+This example searches for all associations containing "門人" (uses fuzzy matching).
+</Note>
+
+### Response
+
+The response format is identical to the `/api/get_assoc` endpoint.
+
+```json
+{
+    "total": 10,
+    "start": 1,
+    "end": 2,
+    "data": [
+        {
+            "aId": 351,
+            "aName": "Posthumous titular office prosposed for",
+            "aNameChn": "提議封贈Y"
+        }
+    ]
+}
+```
+
+---
+
+## Query Associates
+
+Query people who have specific social associations with complex filtering options.
+
+### Endpoint
+
+```bash
+POST /api/query_associates
+```
+
+<Note>
+This endpoint uses **POST** method with `Content-Type: application/json`.
+</Note>
+
+### Request Body Parameters
+
+<ParamField body="association" type="array" required>
+  Array of association codes to query
+</ParamField>
+
+<ParamField body="place" type="array">
+  Array of person-related place IDs
+</ParamField>
+
+<ParamField body="usePeoplePlace" type="number" default={0}>
+  Enable person place filtering:
+  - `1`: Enable
+  - `0`: Disable (ignores `place` parameter)
+</ParamField>
+
+<ParamField body="useXy" type="number" default={0}>
+  Include coordinate data:
+  - `1`: Include
+  - `0`: Exclude
+</ParamField>
+
+<ParamField body="indexYear" type="number" default={0}>
+  Enable index year filtering:
+  - `1`: Enable (uses `indexStartTime` and `indexEndTime`)
+  - `0`: Disable
+</ParamField>
+
+<ParamField body="indexStartTime" type="number">
+  Index year start (only used if `indexYear=1`)
+</ParamField>
+
+<ParamField body="indexEndTime" type="number">
+  Index year end (only used if `indexYear=1`)
+</ParamField>
+
+<ParamField body="broad" type="number" default={0}>
+  Geographic search scope:
+  - `0`: Narrow (+/- 0.03 degrees)
+  - `1`: Broad (+/- 0.06 degrees)
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+```bash Query with all filters
+curl -X POST "https://input.cbdb.fas.harvard.edu/api/query_associates" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "association": [22],
+    "place": [101125],
+    "usePeoplePlace": 1,
+    "useXy": 1,
+    "indexYear": 1,
+    "indexStartTime": 960,
+    "indexEndTime": 1250,
+    "broad": 0
+  }'
+```
+
+```bash Query without time filter
+curl -X POST "https://input.cbdb.fas.harvard.edu/api/query_associates" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "association": [23],
+    "place": [101125],
+    "usePeoplePlace": 1,
+    "useXy": 1,
+    "indexYear": 0,
+    "indexStartTime": null,
+    "indexEndTime": null,
+    "broad": 0
+  }'
+```
+</CodeGroup>
+
+<Note>
+The first example finds all teachers (Y) of people (X) who:
+- Have "Student of Y" relationship (association code 22)
+- Are from Jianzhou (place 101125) 
+- Lived between 960-1250 CE
+
+The second example finds all students (Y) of people (X) who:
+- Have "Teacher of Y" relationship (association code 23)
+- Are from Jianzhou (place 101125)
+- No time restriction
+</Note>
+
+### Response
+
+<ResponseField name="total" type="number">
+  Total number of records
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting record number of current data
+</ResponseField>
+
+<ResponseField name="end" type="number">
+  Ending record number of current data
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of associate records
+  
+  <Expandable title="Associate Record Properties">
+    <ResponseField name="pId" type="number">
+      Person ID (center person X)
+    </ResponseField>
+    
+    <ResponseField name="pName" type="string">
+      Person name in English
+    </ResponseField>
+    
+    <ResponseField name="pNameChn" type="string">
+      Person name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="pSex" type="string">
+      Person gender
+    </ResponseField>
+    
+    <ResponseField name="pIndexYear" type="number">
+      Person's index year
+    </ResponseField>
+    
+    <ResponseField name="pAddrID" type="number">
+      Person's place ID
+    </ResponseField>
+    
+    <ResponseField name="pAddrName" type="string">
+      Person's place name in English
+    </ResponseField>
+    
+    <ResponseField name="pAddrNameChn" type="string">
+      Person's place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="pX" type="number">
+      Longitude of person's place
+    </ResponseField>
+    
+    <ResponseField name="pY" type="number">
+      Latitude of person's place
+    </ResponseField>
+    
+    <ResponseField name="p_xy_count" type="number">
+      Number of people at the person's place
+    </ResponseField>
+    
+    <ResponseField name="pKinshipRelation" type="string">
+      Person's kinship relation in English
+    </ResponseField>
+    
+    <ResponseField name="pKinshipRelationChn" type="string">
+      Person's kinship relation in Chinese
+    </ResponseField>
+    
+    <ResponseField name="pKinName" type="string">
+      Person's kin name in English
+    </ResponseField>
+    
+    <ResponseField name="pKinNameChn" type="string">
+      Person's kin name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="aId" type="number">
+      Associate ID (related person Y)
+    </ResponseField>
+    
+    <ResponseField name="aName" type="string">
+      Associate name in English
+    </ResponseField>
+    
+    <ResponseField name="aNameChn" type="string">
+      Associate name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="aSex" type="string">
+      Associate gender
+    </ResponseField>
+    
+    <ResponseField name="aIndexYear" type="number">
+      Associate's index year
+    </ResponseField>
+    
+    <ResponseField name="aAddrID" type="number">
+      Associate's place ID
+    </ResponseField>
+    
+    <ResponseField name="aAddrName" type="string">
+      Associate's place name in English
+    </ResponseField>
+    
+    <ResponseField name="aAddrNameChn" type="string">
+      Associate's place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="aX" type="number">
+      Longitude of associate's place
+    </ResponseField>
+    
+    <ResponseField name="aY" type="number">
+      Latitude of associate's place
+    </ResponseField>
+    
+    <ResponseField name="a_xy_count" type="number">
+      Number of people at the associate's place
+    </ResponseField>
+    
+    <ResponseField name="aKinshipRelation" type="string">
+      Associate's kinship relation in English
+    </ResponseField>
+    
+    <ResponseField name="aKinshipRelationChn" type="string">
+      Associate's kinship relation in Chinese
+    </ResponseField>
+    
+    <ResponseField name="aKinName" type="string">
+      Associate's kin name in English
+    </ResponseField>
+    
+    <ResponseField name="aKinNameChn" type="string">
+      Associate's kin name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="distance" type="number">
+      Geographic distance between person and associate (in km)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+    "total": 100,
+    "start": 1,
+    "end": 2,
+    "data": [
+        {
+            "pId": "46398",
+            "pName": "Liang Zhuan",
+            "pNameChn": "梁瑑",
+            "aId": "3257",
+            "aName": "Zhu Xi",
+            "aNameChn": "朱熹",
+            "pIndexYear": "",
+            "pSex": "M",
+            "aIndexYear": "1189",
+            "aSex": "M",
+            "pAddrID": "100577",
+            "pAddrName": "Shaowu",
+            "pAddrNameChn": "邵武",
+            "pX": "114.483398",
+            "pY": "27.337692",
+            "aAddrID": "101125",
+            "aAddrName": "Jianzhou",
+            "aAddrNameChn": "建州",
+            "aX": "118.32378387",
+            "aY": "27.038864136",
+            "pKinshipRelation": "U",
+            "pKinshipRelationChn": "未詳",
+            "pKinName": "Wei Xiang",
+            "pKinNameChn": "未詳",
+            "aKinshipRelation": "U",
+            "aKinshipRelationChn": "未詳",
+            "aKinName": "Wei Xiang",
+            "aKinNameChn": "未詳",
+            "distance": "89.516896410",
+            "p_xy_count": 17,
+            "a_xy_count": 7,
+            "KinRelCal": ""
+        }
+    ]
+}
+```
+
+---
+
+## Query Association Network
+
+Query social network relationships between multiple people with support for multi-degree separation.
+
+### Endpoint
+
+```bash
+POST /api/query_assoc_network
+```
+
+<Note>
+This endpoint uses **POST** method with `Content-Type: application/json`.
+</Note>
+
+### Request Body Parameters
+
+<ParamField body="people" type="array" required>
+  Array of person IDs to query
+</ParamField>
+
+<ParamField body="assocCode" type="array">
+  Array of specific association codes
+</ParamField>
+
+<ParamField body="assocType" type="array">
+  Array of association type categories
+</ParamField>
+
+<ParamField body="maxNodeDist" type="number" default={1}>
+  Maximum degree of separation:
+  - `0`: Only direct relationships between people in the input array
+  - `1`: One degree of separation
+  - `2`: Two degrees of separation
+  - `>2`: Not supported (will return error message)
+</ParamField>
+
+<ParamField body="place" type="array">
+  Array of person-related place IDs
+</ParamField>
+
+<ParamField body="usePeoplePlace" type="number" default={0}>
+  Enable person place filtering:
+  - `1`: Enable
+  - `0`: Disable
+</ParamField>
+
+<ParamField body="useXy" type="number" default={0}>
+  Include coordinate data:
+  - `1`: Include
+  - `0`: Exclude
+</ParamField>
+
+<ParamField body="broad" type="number" default={0}>
+  Geographic search scope:
+  - `0`: Narrow (+/- 0.03 degrees)
+  - `1`: Broad (+/- 0.06 degrees)
+</ParamField>
+
+<ParamField body="indexYear" type="number" default={0}>
+  Enable index year filtering:
+  - `1`: Enable
+  - `0`: Disable
+</ParamField>
+
+<ParamField body="indexStartTime" type="number">
+  Index year start (only used if `indexYear=1`)
+</ParamField>
+
+<ParamField body="indexEndTime" type="number">
+  Index year end (only used if `indexYear=1`)
+</ParamField>
+
+<ParamField body="useDy" type="number" default={0}>
+  Enable dynasty filtering:
+  - `1`: Enable
+  - `0`: Disable
+</ParamField>
+
+<ParamField body="dynStart" type="number">
+  Dynasty start code (only used if `useDy=1`)
+</ParamField>
+
+<ParamField body="dynEnd" type="number">
+  Dynasty end code (only used if `useDy=1`)
+</ParamField>
+
+<ParamField body="includeMale" type="number" default={1}>
+  Include male persons:
+  - `1`: Include
+  - `0`: Exclude
+</ParamField>
+
+<ParamField body="includeFemale" type="number" default={1}>
+  Include female persons:
+  - `1`: Include
+  - `0`: Exclude
+</ParamField>
+
+<ParamField body="start" type="number" default={0}>
+  Starting record number
+</ParamField>
+
+<ParamField body="list" type="number" default={10}>
+  Number of records to return
+</ParamField>
+
+### Example Request
+
+```bash
+curl -X POST "https://input.cbdb.fas.harvard.edu/api/query_assoc_network" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "people": [1762, 3767],
+    "assocCode": [429],
+    "assocType": ["02"],
+    "maxNodeDist": 1,
+    "place": [13305],
+    "usePeoplePlace": 1,
+    "broad": 0,
+    "useDy": 1,
+    "dynStart": 15,
+    "dynEnd": 15,
+    "includeMale": 1,
+    "includeFemale": 1,
+    "start": 0,
+    "list": 10
+  }'
+```
+
+<Note>
+This example queries the social network of Wang Anshi (1762) and Su Shi (3767), finding:
+- People who have "Correspondence" (致書, code 429) or "Academic" (type 02) relationships
+- Within one degree of separation
+- From Meishan area (place 13305) during Song Dynasty (dynasty 15)
+- Also returns relationships between the discovered people (e.g., Su Shi's brother Su Zhe and their shared teacher Liu Ju)
+</Note>
+
+### Response
+
+<ResponseField name="total" type="number">
+  Total number of records
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting record number of current data
+</ResponseField>
+
+<ResponseField name="end" type="number">
+  Ending record number of current data
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of association network records
+  
+  <Expandable title="Network Record Properties">
+    <ResponseField name="pId" type="number">
+      Person ID
+    </ResponseField>
+    
+    <ResponseField name="pName" type="string">
+      Person name in English
+    </ResponseField>
+    
+    <ResponseField name="pNameChn" type="string">
+      Person name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="pIndexYear" type="number">
+      Person's index year
+    </ResponseField>
+    
+    <ResponseField name="pSex" type="string">
+      Person gender
+    </ResponseField>
+    
+    <ResponseField name="pAddrID" type="number">
+      Person's place ID
+    </ResponseField>
+    
+    <ResponseField name="pAddrName" type="string">
+      Person's place name in English
+    </ResponseField>
+    
+    <ResponseField name="pAddrNameChn" type="string">
+      Person's place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="pX" type="number">
+      Longitude of person's place
+    </ResponseField>
+    
+    <ResponseField name="pY" type="number">
+      Latitude of person's place
+    </ResponseField>
+    
+    <ResponseField name="aId" type="number">
+      Associate ID
+    </ResponseField>
+    
+    <ResponseField name="aName" type="string">
+      Associate name in English
+    </ResponseField>
+    
+    <ResponseField name="aNameChn" type="string">
+      Associate name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="aIndexYear" type="number">
+      Associate's index year
+    </ResponseField>
+    
+    <ResponseField name="aSex" type="string">
+      Associate gender
+    </ResponseField>
+    
+    <ResponseField name="aAddrID" type="number">
+      Associate's place ID
+    </ResponseField>
+    
+    <ResponseField name="aAddrName" type="string">
+      Associate's place name in English
+    </ResponseField>
+    
+    <ResponseField name="aAddrNameChn" type="string">
+      Associate's place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="aX" type="number">
+      Longitude of associate's place
+    </ResponseField>
+    
+    <ResponseField name="aY" type="number">
+      Latitude of associate's place
+    </ResponseField>
+    
+    <ResponseField name="pAssocRelationId" type="number">
+      Association type ID
+    </ResponseField>
+    
+    <ResponseField name="pAssocRelation" type="string">
+      Association type in English
+    </ResponseField>
+    
+    <ResponseField name="pAssocRelationChn" type="string">
+      Association type in Chinese
+    </ResponseField>
+    
+    <ResponseField name="distance" type="number">
+      Geographic distance between person and associate (in km)
+    </ResponseField>
+    
+    <ResponseField name="count" type="number">
+      Number of times this association occurred
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+    "total": 100,
+    "start": 1,
+    "end": 2,
+    "data": [
+        {
+            "pId": "1493",
+            "pName": "Su Zhe",
+            "pNameChn": "蘇轍",
+            "aId": "3257",
+            "aName": "Liu Ju(2)",
+            "aNameChn": "劉巨",
+            "pIndexYear": "1039",
+            "pSex": "M",
+            "aIndexYear": "",
+            "aSex": "M",
+            "pAddrID": "13305",
+            "pAddrName": "Meishan",
+            "pAddrNameChn": "眉山",
+            "pX": "103.831459",
+            "pY": "30.050497",
+            "aAddrID": "13305",
+            "aAddrName": "Meishan",
+            "aAddrNameChn": "眉山",
+            "aX": "103.831459",
+            "aY": "30.050497",
+            "pAssocRelationId": "22",
+            "pAssocRelation": "Student of",
+            "pAssocRelationChn": "為Y之學生",
+            "distance": "0",
+            "count": 1
+        }
+    ]
+}
+```
+
+<Warning>
+**Network Query Details:**
+
+- `maxNodeDist=0`: Only returns direct relationships between people in the input `people` array
+- `maxNodeDist=1`: Returns one-degree relationships (people directly connected to input people) and relationships between all discovered people
+- `maxNodeDist=2`: Returns two-degree relationships (friends of friends) and relationships between all discovered people
+- `maxNodeDist>2`: Not supported, returns error message
+- The query includes relationships between all discovered people (e.g., if A's friend is B, and B's friend is C, the result includes both A-B and B-C relationships)
+</Warning>

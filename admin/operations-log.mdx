@@ -1,0 +1,416 @@
+---
+title: Operations Log
+description: View and restore operation logs in CBDB Online
+icon: clock-rotate-left
+---
+
+The Operations Log system tracks all data modifications made in CBDB Online, providing administrators with a comprehensive audit trail and the ability to restore previous versions of data.
+
+## Accessing the Operations Log
+
+The operations log is available at `/operations` for all logged-in users. The interface displays recent modifications with detailed before/after comparisons.
+
+<Note>
+  The operations log is implemented in `app/Http/Controllers/OperationsController.php` and uses the `operations` table for storing modification history.
+</Note>
+
+## Log Views
+
+The operations log provides two different views:
+
+<CardGroup cols={2}>
+  <Card title="All Operations" icon="list" href="/operations">
+    View all data modifications including creates, updates, and deletes
+    
+    **URL:** `/operations`
+  </Card>
+  
+  <Card title="Proposals Only" icon="file-lines" href="/operations?proposals_only=1">
+    Filter to show only proposal submissions (create and update proposals)
+    
+    **URL:** `/operations?proposals_only=1`
+  </Card>
+</CardGroup>
+
+## Operation Types
+
+The system tracks different types of operations, identified by the `op_type` field:
+
+| Type Code | Operation | Description |
+|-----------|-----------|-------------|
+| `1` | Create | New record added to the database |
+| `2` | Overwrite | Complete replacement of existing data |
+| `3` | Update | Modification of existing record fields |
+| `4` | Delete | Record removed from the database |
+| `8` | Proposal Create | New data proposed (pending review) |
+| `9` | Proposal Update | Update to data proposed (pending review) |
+
+## Viewing Operation Details
+
+Each operation log entry displays the following information:
+
+### Basic Information
+
+- **Operation ID** - Unique identifier for the operation
+- **User** - Name and ID of the user who performed the operation
+- **Timestamp** - When the operation was performed (displayed in GMT+8)
+- **Resource Type** - Database table affected (e.g., `BIOG_MAIN`, `OFFICE_CODES`)
+- **Resource ID** - Identifier of the affected record
+- **Operation Type** - Create, Update, Delete, etc.
+
+### Change Details
+
+For update operations, the log shows:
+
+- **resource_original** - Data before the change (JSON format)
+- **resource_data** - Data after the change (JSON format)
+- **resource_diff** - Visual comparison highlighting changed fields
+
+<Tip>
+  The diff view uses color coding: red for removed values, green for added values, making it easy to spot changes at a glance.
+</Tip>
+
+## Filtering Operations
+
+The operations log supports multiple filtering options:
+
+### By Editor
+
+Filter by user ID or name:
+
+```bash
+/operations?editor=123          # Filter by user ID
+/operations?editor=張三          # Filter by name (fuzzy match)
+```
+
+### By Operation Type
+
+Filter by operation type (multiple selection supported):
+
+```bash
+/operations?op_type[]=1&op_type[]=3   # Show creates and updates only
+```
+
+### By Proposal Status
+
+When viewing proposals only:
+
+```bash
+/operations?proposals_only=1&status[]=pending
+/operations?proposals_only=1&status[]=approved
+/operations?proposals_only=1&status[]=rejected
+/operations?proposals_only=1&status[]=cancelled
+```
+
+Available status values:
+- `pending` - Awaiting review
+- `approved` - Accepted by reviewer
+- `rejected` - Declined by reviewer
+- `cancelled` - Withdrawn by submitter
+
+## Restore Functionality
+
+<Warning>
+  **Administrator Access Required**
+  
+  Only active super administrators (`is_active == 1` AND `is_admin == 1`) can restore operations. This feature is not available to regular users.
+</Warning>
+
+The restore functionality allows administrators to revert data to a previous state.
+
+### How Restore Works
+
+<Steps>
+  <Step title="View Operation">
+    Navigate to `/operations` and locate the operation you want to restore.
+  </Step>
+  
+  <Step title="Click Restore Button">
+    Click the "復原" (Restore) button next to the operation.
+    
+    A confirmation dialog appears: "將以你的名義對該資源進行一次修改，恢復至本次改動之前，是否繼續？"
+  </Step>
+  
+  <Step title="Confirm Restoration">
+    Confirm the action. The system will:
+    - Revert the data to the state before the selected operation
+    - Create a new operation record (type 3 - Update) documenting the restoration
+    - Display success message with timestamp
+  </Step>
+</Steps>
+
+### Supported Operations
+
+The restore functionality supports:
+
+- **Type 3 (Update)** - Restores to the previous snapshot
+- **Type 4 (Delete)** - Re-inserts the deleted data
+
+<Note>
+  **Important Limitations**
+  
+  - `POSTED_TO_ADDR_DATA` operations cannot be restored (temporary restriction)
+  - Other operation types (Create, Overwrite) are not currently restorable
+</Note>
+
+### Restore Implementation Details
+
+The restore process (`OperationsController.php:650`) follows these steps:
+
+1. **Permission Check** - Verifies user is active super admin
+2. **Database Transaction** - Wraps restore in transaction for atomicity
+3. **Data Retrieval** - Fetches previous snapshot from operation history
+4. **Key Condition Building** - Constructs WHERE clause using primary keys
+5. **Column Filtering** - Removes non-existent columns from payload
+6. **Update/Insert** - Applies changes to database
+7. **Operation Recording** - Creates new operation record documenting the restore
+
+### Restoration Snapshot Resolution
+
+When restoring an update, the system looks for the "previous snapshot" in this order:
+
+1. **Previous Operation** - Searches for earlier operations on the same resource
+2. **Original Data** - Falls back to `resource_original` field if no previous operation exists
+3. **ALTNAME_DATA Cross-Format** - For `ALTNAME_DATA` table, uses composite primary key parsing to match operations regardless of `resource_id` format (4-key vs 3-key)
+
+The snapshot resolution is implemented in `OperationsController.php:755`:
+
+```php
+protected function getPreviousSnapshot(Operation $operation) {
+    // First attempt: find previous operation
+    $previous = Operation::where('resource', $operation->resource)
+        ->where('resource_id', $operation->resource_id)
+        ->where('id', '<', $operation->id)
+        ->orderBy('id', 'desc')
+        ->first();
+
+    // Fallback: use resource_original
+    if (!$previous) {
+        return $this->decodeJson($operation->resource_original);
+    }
+    
+    return $this->decodeJson($previous->resource_data);
+}
+```
+
+## Real-Time Diff Display
+
+The operations log performs real-time comparison between logged data and current database state:
+
+### Comparison Process
+
+<Steps>
+  <Step title="Fetch Current Data">
+    Query the database for the current state of the resource
+  </Step>
+  
+  <Step title="Compare States">
+    Use `OperationRepository::getArrDiff()` to compare:
+    - `resource_data` (logged "after" state)
+    - `resource_original` (logged "before" state)
+    - Current database state
+  </Step>
+  
+  <Step title="Highlight Changes">
+    Display three-way comparison showing:
+    - What was changed in the operation
+    - Whether current state matches the logged state
+    - Any subsequent modifications
+  </Step>
+</Steps>
+
+### Supported Resource Types
+
+The real-time comparison supports the following table types:
+
+<AccordionGroup>
+  <Accordion title="Person Data">
+    - `BIOG_MAIN` - Basic biographical information
+    - `ALTNAME_DATA` - Alternative names
+    - `BIOG_ADDR_DATA` - Address data
+    - `BIOG_TEXT_DATA` - Text data
+    - `BIOG_INST_DATA` - Institution affiliations
+    - `BIOG_SOURCE_DATA` - Source citations
+  </Accordion>
+  
+  <Accordion title="Office & Posting Data">
+    - `OFFICE_CODES` - Office code definitions
+    - `OFFICE_CODE_TYPE_REL` - Office type relationships
+    - `OFFICE_TYPE_TREE` - Office type hierarchy
+    - `POSTED_TO_OFFICE_DATA` - Posting to office records
+    - `POSTED_TO_ADDR_DATA` - Posting address data (rows format)
+  </Accordion>
+  
+  <Accordion title="Relationship Data">
+    - `ENTRY_DATA` - Entry method records
+    - `EVENTS_DATA` - Event records
+    - `STATUS_DATA` - Social status records
+    - `KIN_DATA` - Kinship records
+    - `ASSOC_DATA` - Association records
+    - `POSSESSION_DATA` - Property records
+  </Accordion>
+</AccordionGroup>
+
+### Composite Primary Key Handling
+
+Many CBDB tables use composite primary keys. The system uses `resource_id` field to store encoded primary key values:
+
+**Encoding Examples:**
+
+```bash
+# BIOG_ADDR_DATA: c_personid-c_addr_id-c_addr_type-c_sequence
+"12345-67-1-1"
+
+# ALTNAME_DATA: c_personid=123&c_alt_name_chn=字&c_alt_name_type_code=4
+"c_personid=123&c_alt_name_chn=字&c_alt_name_type_code=4"
+
+# ENTRY_DATA: supports both _._and - delimiters
+"12345_._1_._1_._0_._0_._0_._1450_._0_._0_._0"
+"12345-1-1-0-0-0-1450-0-0-0"
+```
+
+<Note>
+  Special characters in primary keys are encoded using reserved patterns like `(slash)`, `(minus)`, `(brackets)` to avoid conflicts with delimiters.
+</Note>
+
+## Pagination
+
+The operations log displays 20 records per page by default. Use the pagination controls at the bottom of the page to navigate through results.
+
+```php
+// Implementation in OperationsController.php:86
+$lists = $query->orderBy('updated_at', 'desc')->paginate(20);
+```
+
+## Operation Recording
+
+All operations are recorded through the `OperationRepository::store()` method:
+
+```php
+OperationRepository::store(
+    $userId,           // ID of user performing operation
+    $personId,         // c_personid (if applicable)
+    $opType,           // Operation type code (1-4, 8-9)
+    $resource,         // Table name
+    $resourceId,       // Primary key (encoded for composite keys)
+    $resourceData,     // After state (JSON)
+    $resourceOriginal  // Before state (JSON)
+);
+```
+
+### Best Practices for Operation Recording
+
+<Warning>
+  **Transaction Safety**
+  
+  Always record operations within database transactions to ensure data consistency:
+  
+  ```php
+  DB::transaction(function () {
+      // Perform database changes
+      $model->update($data);
+      
+      // Record operation
+      $this->operationRepository->store(...);
+  });
+  ```
+</Warning>
+
+## Affected Person IDs
+
+The operations log tracks which person records are affected by each operation:
+
+- Extracted from `c_personid` field in the operation
+- Extracted from related audit logs
+- Used for cross-referencing and person-centric operation views
+
+The extraction is performed by `extractAffectedPersonIds()` method in `OperationsController.php:104`.
+
+## Performance Considerations
+
+The operations log employs several optimizations:
+
+### Batch Loading
+
+Audit logs are loaded in batch using `loadAuditLogsByOperation()` to avoid N+1 queries.
+
+### Indexing
+
+The `operations` table includes indexes on:
+- `resource` and `resource_id` - For finding operations on specific resources
+- `op_type` - For filtering by operation type
+- `user_id` - For filtering by user
+- `updated_at` - For chronological sorting
+
+### Query Optimization
+
+The controller uses eager loading for user relationships:
+
+```php
+$query->with('user')->orderBy('updated_at', 'desc')->paginate(20);
+```
+
+## API Endpoints
+
+### View Operations Log
+
+```http
+GET /operations
+```
+
+**Query Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `proposals_only` | boolean | Filter to show only proposals |
+| `status[]` | array | Filter by proposal status (when proposals_only=1) |
+| `editor` | string | Filter by user ID or name |
+| `op_type[]` | array | Filter by operation types |
+| `page` | integer | Page number for pagination |
+
+### Restore Operation
+
+```http
+POST /operations/{id}/restore
+```
+
+**Requirements:**
+- User must be authenticated
+- User must have super admin privileges
+- CSRF token required
+
+**Response:**
+- Success: Redirects to `/operations` with success flash message
+- Failure: Redirects back with error flash message
+
+## Error Handling
+
+The restore functionality includes comprehensive error handling:
+
+```php
+try {
+    $result = DB::transaction(function () use ($operation) {
+        return $this->performRestore($operation);
+    });
+    flash('恢復成功 @ '.Carbon::now(), 'success');
+} catch (\Throwable $e) {
+    Log::error('Operation restore failed', [
+        'operation_id' => $operation->id,
+        'error' => $e->getMessage(),
+    ]);
+    flash('恢復失敗：'.$e->getMessage(), 'error');
+}
+```
+
+Common error scenarios:
+- Missing primary key data
+- Record no longer exists in database
+- Column schema mismatch
+- Transaction conflicts
+
+## Related Documentation
+
+- [User Management](/admin/user-management) - Managing user accounts
+- [AGENTS.md - Operations Log Section](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/AGENTS.md)
+- [Resource TTS Notes](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/docs/RESOURCE_TTS_NOTES.md)
+- [Approval Flows Documentation](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/docs/APPROVAL_FLOWS.md)

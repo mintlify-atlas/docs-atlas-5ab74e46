@@ -1,0 +1,274 @@
+---
+title: "Kinship Relations"
+description: "Document family relationships and genealogical networks in CBDB Online"
+icon: "people-arrows"
+---
+
+## Overview
+
+Kinship relations (親屬關係) record family relationships between people in the CBDB database. These relationships form genealogical networks that help researchers understand family structures, lineages, and social connections in historical China.
+
+## KIN_DATA Table
+
+Kinship relationships are stored in the `KIN_DATA` table with composite primary key:
+
+```sql Schema
+CREATE TABLE KIN_DATA (
+    c_personid INT,
+    c_kin_id INT,
+    c_kinrel_code INT,
+    c_kin_name_chn VARCHAR(255),
+    c_kin_name VARCHAR(255),
+    c_notes TEXT,
+    PRIMARY KEY (c_personid, c_kin_id),
+    FOREIGN KEY (c_personid) REFERENCES BIOG_MAIN(c_personid),
+    FOREIGN KEY (c_kin_id) REFERENCES BIOG_MAIN(c_personid),
+    FOREIGN KEY (c_kinrel_code) REFERENCES KINSHIP_CODES(c_kinrel_code)
+);
+```
+
+**Key fields:**
+- `c_personid`: The person whose relationship is being described
+- `c_kin_id`: The related person's ID
+- `c_kinrel_code`: Relationship type from `KINSHIP_CODES`
+- `c_kin_name_chn`/`c_kin_name`: Name of the related person (if not in BIOG_MAIN)
+
+<Note>
+Because KIN_DATA uses a composite primary key `(c_personid, c_kin_id)`, you must use Laravel's **Query Builder** (`DB::table()`) rather than Eloquent models when working with this table directly.
+</Note>
+
+## Adding Kinship Relations
+
+<Steps>
+  <Step title="Navigate to person's detail page">
+    Go to `/basicinformation/{personid}` and scroll to "Kinship Relations" section.
+  </Step>
+  <Step title="Click 'Add New Kinship Relation'">
+    This opens the kinship relation creation form.
+  </Step>
+  <Step title="Select or enter related person">
+    You can either:
+    - **Link to existing person**: Select `c_kin_id` from BIOG_MAIN
+    - **Enter name only**: Fill in `c_kin_name_chn` and `c_kin_name` for people not in database
+  </Step>
+  <Step title="Choose relationship type">
+    Select from `KINSHIP_CODES` (examples):
+    - F: Father
+    - M: Mother
+    - S: Son
+    - D: Daughter
+    - B: Brother
+    - Z: Sister ("Z" from Chinese pinyin 姊妹)
+    - W: Wife
+    - And many more specialized relationship types
+  </Step>
+  <Step title="Add notes (optional)">
+    Use the notes field for:
+    - Adoption or step-relationships
+    - Uncertainties in the relationship
+    - Additional context
+  </Step>
+  <Step title="Save relation">
+    Click "Save" to create the kinship record.
+  </Step>
+</Steps>
+
+## Kinship Codes
+
+The `KINSHIP_CODES` table contains standardized relationship types. Common codes include:
+
+| Code | English | Chinese | Description |
+|------|---------|---------|-------------|
+| F | Father | 父 | Biological father |
+| M | Mother | 母 | Biological mother |
+| S | Son | 子 | Son |
+| D | Daughter | 女 | Daughter |
+| B | Brother | 兄弟 | Brother |
+| Z | Sister | 姐妹 | Sister |
+| W | Wife | 妻 | Wife |
+| H | Husband | 夫 | Husband |
+| GF | Grandfather | 祖父 | Paternal grandfather |
+| GM | Grandmother | 祖母 | Paternal grandmother |
+
+<Tip>
+View all relationship codes at `/codes/KINSHIP_CODES` or use the API endpoint `/api/select/kinship_codes`.
+</Tip>
+
+## Query Builder Usage
+
+Since `KIN_DATA` has a composite primary key, use Query Builder for database operations:
+
+```php Query examples
+// Add kinship relation
+DB::table('KIN_DATA')->insert([
+    'c_personid' => 12345,
+    'c_kin_id' => 67890,
+    'c_kinrel_code' => 'F', // Father
+    'c_notes' => 'Biological father',
+]);
+
+// Update kinship relation
+DB::table('KIN_DATA')
+    ->where('c_personid', 12345)
+    ->where('c_kin_id', 67890)
+    ->update([
+        'c_kinrel_code' => 'SF', // Step-father
+        'c_notes' => 'Step-father relationship',
+    ]);
+
+// Get all kinship relations for a person
+$relations = DB::table('KIN_DATA')
+    ->where('c_personid', 12345)
+    ->join('BIOG_MAIN', 'KIN_DATA.c_kin_id', '=', 'BIOG_MAIN.c_personid')
+    ->select('KIN_DATA.*', 'BIOG_MAIN.c_name_chn', 'BIOG_MAIN.c_name')
+    ->get();
+
+// Delete kinship relation
+DB::table('KIN_DATA')
+    ->where('c_personid', 12345)
+    ->where('c_kin_id', 67890)
+    ->delete();
+```
+
+<Warning>
+**Never use Eloquent models for composite primary key tables.** Eloquent does not officially support composite primary keys, and operations like `update()` and `delete()` will not work correctly.
+</Warning>
+
+## Reciprocal Relationships
+
+Kinship relationships are typically **directional** but can be reciprocal:
+
+<Accordion title="Example: Father-Son Relationship">
+  If person A is the father of person B, you should create two records:
+  
+  1. **From A's perspective:**
+     - `c_personid`: A
+     - `c_kin_id`: B
+     - `c_kinrel_code`: S (son)
+  
+  2. **From B's perspective:**
+     - `c_personid`: B
+     - `c_kin_id`: A
+     - `c_kinrel_code`: F (father)
+  
+  This allows bidirectional queries and maintains referential integrity.
+</Accordion>
+
+<Note>
+CBDB Online does not automatically create reciprocal relationships. You must manually add both directions if needed for complete genealogical networks.
+</Note>
+
+## Querying Kinship Networks
+
+### Find All Relatives of a Person
+
+```php Find relatives
+$personId = 12345;
+
+$relatives = DB::table('KIN_DATA as k')
+    ->leftJoin('BIOG_MAIN as b', 'k.c_kin_id', '=', 'b.c_personid')
+    ->leftJoin('KINSHIP_CODES as kc', 'k.c_kinrel_code', '=', 'kc.c_kinrel_code')
+    ->where('k.c_personid', $personId)
+    ->select(
+        'k.*',
+        'b.c_name_chn',
+        'b.c_name',
+        'b.c_index_year',
+        'kc.c_kinrel_desc',
+        'kc.c_kinrel_desc_chn'
+    )
+    ->get();
+```
+
+### API Query: Five-Degree Mourning Circle
+
+The CBDB API provides `/api/query_relatives_2` to find relatives within the traditional Chinese five-degree mourning circle (五服) or custom parameters:
+
+```bash API request
+curl -X POST https://input.cbdb.fas.harvard.edu/api/query_relatives_2 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "people": [1762],
+    "mCircle": 1,
+    "MAncGen": 0,
+    "MDecGen": 0,
+    "MColLink": 0,
+    "MMarLink": 0,
+    "MLoop": 0
+  }'
+```
+
+See [API: Query Relatives](/api/relatives) for full documentation.
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Link to Existing People">
+    When possible, link to existing person records (`c_kin_id`) rather than entering names only. This enables:
+    - Network analysis across the database
+    - Automatic updates when related person's information changes
+    - Referential integrity through foreign keys
+  </Accordion>
+  
+  <Accordion title="Use Standard Codes">
+    - Always use codes from `KINSHIP_CODES` table
+    - Do not create ad-hoc relationship descriptions
+    - If needed code doesn't exist, request addition to `KINSHIP_CODES`
+  </Accordion>
+  
+  <Accordion title="Document Uncertainties">
+    - Use notes field for adoptions, step-relationships, or uncertainties
+    - Mark speculative relationships clearly
+    - Include source information when available
+  </Accordion>
+  
+  <Accordion title="Complete Both Directions">
+    - Add reciprocal relationships for bidirectional queries
+    - Example: If A is father of B, also add B as son of A
+    - Maintains consistency for genealogical research
+  </Accordion>
+</AccordionGroup>
+
+## Operation Logging
+
+Kinship relation operations are logged in the `operations` table:
+
+- **Create**: `op_type` = 1
+- **Update**: `op_type` = 2
+- **Delete**: `op_type` = 4
+- **Restore**: `op_type` = 3
+
+Each log entry includes:
+- `resource_type`: "Relationship Data"
+- `resource_id`: Encoded composite primary key
+- `resource_data`: Full kinship record in JSON format
+
+## Permissions
+
+| Role | Create | Edit | Delete |
+|------|--------|------|--------|
+| Regular (0) | Proposal | Proposal | No |
+| Expert (1) | Direct | Direct | Yes |
+| Crowdsourcing (2) | Proposal | Proposal | No |
+| Super Admin (3) | Direct | Direct | Yes |
+
+<Tip>
+Experts and administrators can directly create/edit/delete kinship relations. Regular users must submit proposals for review.
+</Tip>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Social Associations" icon="network-wired" href="/guides/social-associations">
+    Record non-family social relationships
+  </Card>
+  <Card title="Code Tables" icon="table" href="/guides/code-tables">
+    Manage kinship codes and reference tables
+  </Card>
+  <Card title="API: Query Relatives" icon="code" href="/api/relatives">
+    Query kinship networks via API
+  </Card>
+  <Card title="Data Model" icon="database" href="/concepts/data-model">
+    Understanding database relationships
+  </Card>
+</CardGroup>

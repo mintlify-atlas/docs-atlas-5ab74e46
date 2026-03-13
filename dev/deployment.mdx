@@ -1,0 +1,470 @@
+---
+title: 生產部署
+description: CBDB Online 生產環境部署指南，包含系統需求、Caddy Web Server 配置、維護模式管理
+---
+
+本文檔說明如何將 CBDB Online 部署到生產環境，涵蓋系統需求、Web 伺服器配置、部署流程以及維護策略。
+
+## 系統需求
+
+### 生產環境技術棧
+
+生產環境需滿足以下最低要求：
+
+<CardGroup cols={2}>
+  <Card title="PHP 環境" icon="php">
+    - **版本**: PHP 8.2+ (建議使用 8.4)
+    - **原因**: Laravel 12 已完全支持 PHP 8.4，可獲得最佳性能和安全性
+  </Card>
+  
+  <Card title="Laravel 框架" icon="laravel">
+    - **版本**: Laravel 12.x
+    - 已從 Laravel 11.x 升級 (參見 [UPGRADE.md](https://github.com/cbdb-project/cbdb-online-main-server/blob/master/docs/UPGRADE.md))
+  </Card>
+  
+  <Card title="資料庫" icon="database">
+    - **生產**: MariaDB 10.3.39 (Debian)
+    - **開發**: SQLite 3.45.0+
+  </Card>
+  
+  <Card title="Web Server" icon="server">
+    - **Caddy** (推薦)
+    - 自動 HTTPS、HTTP/2、HTTP/3 支持
+  </Card>
+</CardGroup>
+
+### Node.js 環境
+
+前端資源構建需要：
+- **Node.js**: 22.x
+- **npm**: 10.x (與 Node.js 22 配套)
+- **構建工具**: Vite
+
+<Note>
+本專案已從 Laravel Mix/webpack 遷移至 Vite。所有頁面使用 `@vite` 載入前端資源，請勿引入外部 CDN 的 jQuery/Bootstrap。
+</Note>
+
+## Web Server 配置
+
+### Caddy Server
+
+CBDB Online 生產環境使用 **Caddy** 作為 Web 伺服器。Caddy 提供以下優勢：
+
+- ✅ 自動 HTTPS 證書管理
+- ✅ HTTP/2 和 HTTP/3 原生支持
+- ✅ 配置簡單，無需複雜的 Nginx 配置
+- ✅ 內置反向代理和負載均衡
+
+### Caddy 配置示例
+
+生產環境的 Caddyfile 配置位於 `docker/Caddyfile`：
+
+```caddyfile
+:80 {
+    root * /app/public
+    
+    # Laravel 前端控制器
+    php_fastcgi unix//run/php/php-fpm.sock {
+        index index.php
+    }
+    
+    # 靜態資源緩存
+    @static {
+        path *.css *.js *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf
+    }
+    header @static Cache-Control "public, max-age=31536000, immutable"
+    
+    # 壓縮
+    encode gzip zstd
+    
+    # 文件服務器
+    file_server
+}
+```
+
+<Warning>
+如果使用 Caddy，請確保 `laravel.log` 的擁有者為 `caddy`，否則日誌可能停止記錄：
+
+```bash
+sudo chown caddy storage/logs/laravel.log
+```
+</Warning>
+
+## 部署流程
+
+### 標準部署步驟
+
+<Steps>
+  <Step title="進入維護模式">
+    在部署前將應用設為維護模式，避免用戶訪問期間的錯誤：
+    
+    ```bash
+    php artisan down
+    ```
+    
+    <Note>
+    維護模式會顯示 `resources/views/errors/503.blade.php` 頁面。可自定義此頁面來顯示維護通知。
+    </Note>
+  </Step>
+  
+  <Step title="拉取最新代碼">
+    從 Git 倉庫獲取最新代碼：
+    
+    ```bash
+    cd /path/to/cbdb-online-main-server
+    git pull origin master
+    ```
+  </Step>
+  
+  <Step title="更新依賴">
+    更新 PHP 和前端依賴：
+    
+    ```bash
+    # 更新 PHP 依賴
+    composer install --no-dev --optimize-autoloader
+    
+    # 更新前端依賴
+    npm install
+    ```
+  </Step>
+  
+  <Step title="構建前端資源">
+    編譯生產環境的前端資源：
+    
+    ```bash
+    npm run build
+    ```
+    
+    <Warning>
+    前端資源修改後**必須**運行 `npm run build`，否則前端會顯示舊版本。
+    </Warning>
+  </Step>
+  
+  <Step title="執行資料庫遷移">
+    運行資料庫 migrations（如有必要）：
+    
+    ```bash
+    php artisan migrate --force
+    ```
+    
+    <Note>
+    使用 `--force` 標誌在生產環境執行遷移。請確保已備份數據庫。
+    </Note>
+  </Step>
+  
+  <Step title="清除快取">
+    清除應用快取以確保配置生效：
+    
+    ```bash
+    php artisan cache:clear
+    php artisan config:clear
+    php artisan route:clear
+    php artisan view:clear
+    ```
+  </Step>
+  
+  <Step title="優化性能">
+    生成優化的配置和路由快取：
+    
+    ```bash
+    php artisan config:cache
+    php artisan route:cache
+    php artisan view:cache
+    ```
+  </Step>
+  
+  <Step title="退出維護模式">
+    部署完成後，將應用恢復為可用狀態：
+    
+    ```bash
+    php artisan up
+    ```
+  </Step>
+</Steps>
+
+### 自動化部署腳本
+
+可以將上述步驟整合為部署腳本：
+
+```bash
+#!/bin/bash
+set -e
+
+APP_DIR="/path/to/cbdb-online-main-server"
+cd $APP_DIR
+
+# 進入維護模式
+php artisan down
+
+# 拉取代碼
+git pull origin master
+
+# 更新依賴
+composer install --no-dev --optimize-autoloader
+npm install
+
+# 構建前端
+npm run build
+
+# 資料庫遷移
+php artisan migrate --force
+
+# 清除並重建快取
+php artisan cache:clear
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+# 退出維護模式
+php artisan up
+
+echo "部署完成！"
+```
+
+## 維護模式管理
+
+### 啟用維護模式
+
+維護模式會顯示 503 頁面，並阻止除授權 IP 外的所有訪問：
+
+```bash
+php artisan down
+```
+
+<Note>
+請勿在命令前加 `sudo`。在 Docker 環境中，sudo 可能無權限執行。
+</Note>
+
+### 自定義維護頁面
+
+創建或編輯 `resources/views/errors/503.blade.php` 來自定義維護通知：
+
+```html
+<html>
+<head>
+    <title>系統維護中</title>
+</head>
+<body>
+    <h3>
+        We will update our server from 10:00am to 12:00pm on 11/16. 
+        The inputting service will be closed for 2 hours. 
+        We apologize for this inconvenience. CBDB Team 2024.11.14
+    </h3>
+</body>
+</html>
+```
+
+### 退出維護模式
+
+維護完成後恢復服務：
+
+```bash
+php artisan up
+```
+
+### CentOS 系統完整停機流程
+
+**停止服務**：
+
+```bash
+cd /path/to/cbdb-online-main-server
+
+# 進入維護模式
+php artisan down
+
+# 停止 Docker
+systemctl stop docker
+
+# 關機
+init 0
+```
+
+**啟動服務**：
+
+```bash
+# 啟動 Docker 容器
+cd /path/to/laradock
+docker-compose up -d nginx mysql
+
+# 退出維護模式
+cd /path/to/cbdb-online-main-server
+php artisan up
+```
+
+## 數據庫配置
+
+### 帳號權限分離
+
+<Warning>
+為降低風險，**務必**將應用連線與 migration 連線分離，避免日常帳號擁有過高權限。
+</Warning>
+
+在 `.env` 中配置兩個數據庫帳號：
+
+```env
+# 應用帳號（僅 CRUD 權限）
+DB_USERNAME=foo
+DB_PASSWORD=***
+
+# Migration 帳號（schema 變更權限）
+DB_MIGRATE_USERNAME=foo_migrate
+DB_MIGRATE_PASSWORD=***
+```
+
+**權限說明**：
+- `foo`：一般應用使用者，僅需 SELECT、INSERT、UPDATE、DELETE 權限
+- `foo_migrate`：僅供 migration 使用，具備 CREATE、ALTER、DROP 權限
+
+### 時區配置
+
+<Warning>
+`.env` 中的 `DB_TIMEZONE` **必須**與 `config/app.php` 的 `timezone` 匹配！
+</Warning>
+
+```env
+# 應用時區
+APP_TIMEZONE=Asia/Shanghai
+
+# 資料庫時區（必須使用數字偏移格式）
+DB_TIMEZONE=+08:00
+```
+
+<Note>
+**必須使用數字偏移格式**（如 `+08:00`），不可使用命名時區（如 `Asia/Shanghai`）。原因：MySQL 命名時區需要載入 time zone tables，否則會導致錯誤並中斷所有資料庫連線。
+</Note>
+
+### UTF-8MB4 字符集
+
+導入 SQL 文件時，確保文件頭包含字符集聲明：
+
+```sql
+SET NAMES utf8mb4;
+```
+
+如果使用 Navicat 或其他工具導入 `.sql` 文件，請手動檢查並添加此聲明。
+
+## 部署檢查清單
+
+部署前請確認：
+
+- [ ] 已備份數據庫
+- [ ] 已測試 migrations 在開發環境正常運行
+- [ ] 已運行 `npm run build` 構建前端資源
+- [ ] 已更新 `.env` 配置文件
+- [ ] 已設置正確的文件權限
+- [ ] 已配置 Caddy 或 Web 伺服器
+- [ ] 已設置數據庫帳號權限分離
+- [ ] 已測試維護模式頁面顯示正常
+
+## 性能優化
+
+### OPcache 配置
+
+在 `php.ini` 中啟用 OPcache：
+
+```ini
+[opcache]
+opcache.enable=1
+opcache.memory_consumption=128
+opcache.interned_strings_buffer=8
+opcache.max_accelerated_files=10000
+opcache.revalidate_freq=2
+opcache.fast_shutdown=1
+```
+
+### Laravel 優化
+
+生產環境必須運行的優化命令：
+
+```bash
+# 配置快取
+php artisan config:cache
+
+# 路由快取
+php artisan route:cache
+
+# 視圖快取
+php artisan view:cache
+
+# Composer 自動載入優化
+composer install --optimize-autoloader --no-dev
+```
+
+## 安全考量
+
+### 環境變量
+
+確保 `.env` 文件不被公開訪問：
+
+```bash
+chmod 600 .env
+```
+
+### 調試模式
+
+生產環境**必須**關閉調試模式：
+
+```env
+APP_DEBUG=false
+```
+
+### 日誌權限
+
+確保日誌文件可寫：
+
+```bash
+chown -R caddy:caddy storage/logs
+chmod -R 775 storage/logs
+```
+
+## 故障排查
+
+### 日誌停止記錄
+
+如果 `storage/logs/laravel.log` 停止記錄，檢查文件擁有者：
+
+```bash
+# 檢查擁有者
+ls -l storage/logs/laravel.log
+
+# 修正擁有者（Caddy）
+sudo chown caddy:caddy storage/logs/laravel.log
+```
+
+### 前端資源未更新
+
+確保已運行構建命令並提交產物：
+
+```bash
+npm run build
+git add public/build
+git commit -m "更新前端資源"
+```
+
+### 維護模式無法退出
+
+手動刪除維護模式文件：
+
+```bash
+rm storage/framework/down
+```
+
+## 相關資源
+
+<CardGroup cols={2}>
+  <Card title="Docker 部署" icon="docker" href="/dev/docker">
+    使用 Docker Compose 部署開發環境
+  </Card>
+  
+  <Card title="SQLite 同步" icon="database" href="/dev/sqlite-sync">
+    自動化 SQLite 匯出與 HuggingFace 同步
+  </Card>
+  
+  <Card title="資料庫指南" icon="book" href="/dev/database">
+    資料庫 schema 管理與兼容性
+  </Card>
+  
+  <Card title="升級指南" icon="arrow-up" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/master/docs/UPGRADE.md">
+    Laravel 框架升級記錄
+  </Card>
+</CardGroup>

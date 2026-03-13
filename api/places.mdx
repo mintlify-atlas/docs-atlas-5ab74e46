@@ -1,0 +1,214 @@
+---
+title: 'Places'
+description: 'Query places by name, time period, and hierarchical relationships'
+icon: 'map-location-dot'
+---
+
+## Search Places by Name and Time
+
+Search for places by Chinese or English name with optional time period filtering.
+
+### Endpoint
+
+```bash
+GET /api/place_list
+```
+
+### Parameters
+
+<ParamField query="name" type="string" required>
+  Place name (Chinese or English, URL-encoded)
+</ParamField>
+
+<ParamField query="startTime" type="number">
+  Start year (optional)
+</ParamField>
+
+<ParamField query="endTime" type="number">
+  End year (optional)
+</ParamField>
+
+<ParamField query="accurate" type="number">
+  Matching mode:
+  - `0`: Exact match
+  - `1`: Partial match (fuzzy search)
+  
+  <Warning>
+  Note: The values are reversed compared to office/entry search endpoints!
+  </Warning>
+</ParamField>
+
+<ParamField query="start" type="number">
+  Starting record number
+</ParamField>
+
+<ParamField query="list" type="number">
+  Number of records to return
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+```bash Fuzzy search by Chinese name
+curl "https://input.cbdb.fas.harvard.edu/api/place_list?name=%E6%99%AE%E6%B4%B2%E9%81%93&accurate=1"
+```
+
+```bash Exact search by English name
+curl "https://input.cbdb.fas.harvard.edu/api/place_list?name=Puer&accurate=0"
+```
+</CodeGroup>
+
+### Response
+
+<ResponseField name="total" type="number">
+  Total number of records
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting record number of current data
+</ResponseField>
+
+<ResponseField name="end" type="number">
+  Ending record number of current data
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of place objects
+  
+  <Expandable title="Place Object Properties">
+    <ResponseField name="pId" type="number">
+      Place code (place ID)
+    </ResponseField>
+    
+    <ResponseField name="pName" type="string">
+      Place name in English
+    </ResponseField>
+    
+    <ResponseField name="pNameChn" type="string">
+      Place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="pStartTime" type="number">
+      Place start year
+    </ResponseField>
+    
+    <ResponseField name="pEndTime" type="number">
+      Place end year
+    </ResponseField>
+    
+    <ResponseField name="pBName" type="string">
+      Parent place name in English
+    </ResponseField>
+    
+    <ResponseField name="pBNameChn" type="string">
+      Parent place name in Chinese
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+    "total": 100,
+    "start": 1,
+    "end": 2,
+    "data": [
+        {
+            "pId": 9099,
+            "pName": "Guangzhou Shi",
+            "pNameChn": "廣州市",
+            "pStartTime": 1912,
+            "pEndTime": 1949,
+            "pBName": "Guangdong sheng",
+            "pBNameChn": "廣東省"
+        },
+        {
+            "pId": 9102,
+            "pName": "Guangzhou Shi",
+            "pNameChn": "廣州市",
+            "pStartTime": 1912,
+            "pEndTime": 1949,
+            "pBName": "Guangxi sheng",
+            "pBNameChn": "廣西省"
+        }
+    ]
+}
+```
+
+---
+
+## Get Sub-places Hierarchy
+
+Retrieve all places belonging to a specific place (hierarchical query).
+
+### Endpoint
+
+```bash
+GET /api/place_belongs_to
+```
+
+### Parameters
+
+<ParamField query="id" type="number" required>
+  Place code (parent place ID)
+</ParamField>
+
+<ParamField query="start" type="number">
+  Starting record number
+</ParamField>
+
+<ParamField query="list" type="number">
+  Number of records to return
+</ParamField>
+
+### Example Request
+
+```bash
+curl "https://input.cbdb.fas.harvard.edu/api/place_belongs_to?id=16773"
+```
+
+<Note>
+This example searches for all places belonging to "安西都護府" (place ID 16773).
+
+The result will include the queried place itself, following the ACCESS system convention.
+</Note>
+
+### Response
+
+The response format is identical to the `/api/place_list` endpoint.
+
+```json
+{
+    "total": 100,
+    "start": 1,
+    "end": 2,
+    "data": [
+        {
+            "pId": 9099,
+            "pName": "Guangzhou Shi",
+            "pNameChn": "廣州市",
+            "pStartTime": 1912,
+            "pEndTime": 1949,
+            "pBName": "Guangdong sheng",
+            "pBNameChn": "廣東省"
+        },
+        {
+            "pId": 9102,
+            "pName": "Guangzhou Shi",
+            "pNameChn": "廣州市",
+            "pStartTime": 1912,
+            "pEndTime": 1949,
+            "pBName": "Guangxi sheng",
+            "pBNameChn": "廣西省"
+        }
+    ]
+}
+```
+
+<Note>
+**Data Consistency Notes:**
+
+- The result always includes the queried place itself, following ACCESS system conventions
+- Results are sorted by place ID to ensure consistent ordering
+</Note>

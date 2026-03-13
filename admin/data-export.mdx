@@ -1,0 +1,532 @@
+---
+title: Data Export
+description: SQLite database export and HuggingFace dataset publication
+icon: database
+---
+
+CBDB Online provides automated scripts to export the production database to SQLite format and publish it to HuggingFace for researchers and external users to access.
+
+## Overview
+
+The data export system consists of two main components:
+
+<CardGroup cols={2}>
+  <Card title="Export Script" icon="file-export">
+    Converts MySQL/MariaDB tables to SQLite format
+    
+    **Script:** `scripts/export-daily-sqlite.sh`
+  </Card>
+  
+  <Card title="Sync Script" icon="cloud-arrow-up">
+    Compresses and uploads to HuggingFace dataset repository
+    
+    **Script:** `scripts/weekly-sqlite-sync.sh`
+  </Card>
+</CardGroup>
+
+## Public Dataset Access
+
+The exported SQLite database is available through multiple channels:
+
+<CardGroup cols={2}>
+  <Card title="HuggingFace Dataset" icon="face-smile" href="https://huggingface.co/datasets/cbdb/cbdb-sqlite">
+    Official HuggingFace dataset repository
+    
+    **Repository:** `cbdb/cbdb-sqlite`
+  </Card>
+  
+  <Card title="Direct Download" icon="download">
+    Latest version available at:
+    
+    - `https://huggingface.co/datasets/cbdb/cbdb-sqlite/resolve/main/latest.zip`
+    - `https://input.cbdb.fas.harvard.edu/latest.zip`
+  </Card>
+</CardGroup>
+
+## Export Process
+
+The export script (`export-daily-sqlite.sh`) performs the following steps:
+
+<Steps>
+  <Step title="Read Database Configuration">
+    Loads connection details from `.env` file:
+    - `DB_HOST`
+    - `DB_PORT`
+    - `DB_DATABASE`
+    - `DB_USERNAME`
+    - `DB_PASSWORD`
+  </Step>
+  
+  <Step title="Create SQLite Database">
+    Generates a new SQLite database file:
+    
+    ```bash
+    db-data/cbdb_YYYYMMDD.sqlite3
+    ```
+  </Step>
+  
+  <Step title="Export Tables">
+    Iterates through all database tables and exports data using:
+    
+    - `mysqldump` for data extraction
+    - Custom conversion logic for SQLite compatibility
+    - Preserves table structures and relationships
+  </Step>
+  
+  <Step title="Generate Metadata">
+    Creates a JSON metadata file containing:
+    
+    ```json
+    {
+      "export_date": "2026-03-13",
+      "export_timestamp": "2026-03-13T03:00:00+08:00",
+      "source_database": "cbdb_production",
+      "table_count": 150,
+      "format": "sqlite3"
+    }
+    ```
+  </Step>
+</Steps>
+
+## Weekly Sync to HuggingFace
+
+The sync script (`weekly-sqlite-sync.sh`) orchestrates the complete export and upload workflow.
+
+### Prerequisites
+
+<Warning>
+  **Required Tools**
+  
+  Before running the sync script, ensure these tools are installed:
+</Warning>
+
+#### Install zip Command
+
+```bash Ubuntu/Debian
+sudo apt-get install zip
+```
+
+#### Install HuggingFace CLI
+
+```bash
+# Install pipx if not already installed
+sudo apt-get install -y pipx
+
+# Install huggingface-hub
+pipx install huggingface-hub
+
+# Ensure pipx bin directory is in PATH
+pipx ensurepath
+```
+
+### HuggingFace Authentication
+
+The script supports two authentication methods:
+
+<Tabs>
+  <Tab title="Method 1: hf auth login (Recommended)">
+    ```bash
+    # Login interactively
+    hf auth login
+    
+    # Paste your access token when prompted
+    # Token is securely stored in ~/.cache/huggingface/
+    ```
+    
+    **Advantages:**
+    - Secure token storage
+    - No need to set environment variables
+    - Persists across sessions
+  </Tab>
+  
+  <Tab title="Method 2: Environment Variable">
+    ```bash
+    # Set HF_TOKEN environment variable
+    export HF_TOKEN=hf_your_access_token_here
+    
+    # Add to .bashrc or .zshrc for persistence
+    echo 'export HF_TOKEN=hf_your_token' >> ~/.bashrc
+    ```
+    
+    **Use case:**
+    - Automated scripts
+    - CI/CD pipelines
+    - Non-interactive environments
+  </Tab>
+</Tabs>
+
+### Creating HuggingFace Access Token
+
+<Steps>
+  <Step title="Visit Token Settings">
+    Navigate to: https://huggingface.co/settings/tokens
+  </Step>
+  
+  <Step title="Create New Token">
+    Click "Create new token" and select "Fine-grained"
+  </Step>
+  
+  <Step title="Configure Permissions">
+    Under "Repositories", select:
+    - ✅ **Write** permission
+    
+    This allows the script to upload files to the dataset repository.
+  </Step>
+  
+  <Step title="Copy Token">
+    Save the generated token (starts with `hf_`) and use it for authentication.
+  </Step>
+</Steps>
+
+### Running the Sync Script
+
+#### Manual Execution
+
+```bash
+# Navigate to project root
+cd /path/to/cbdb-online-main-server
+
+# Run the complete sync workflow
+bash scripts/weekly-sqlite-sync.sh
+```
+
+**Output Example:**
+
+```
+================================================
+CBDB SQLite 每週同步（HuggingFace）
+================================================
+時間: 2026-03-13 03:00:00
+
+環境資訊:
+  - USER: cbdb
+  - HOME: /home/cbdb
+  - HF 認證: hf auth login
+
+[1/4] 執行 SQLite 匯出腳本...
+匯出檔案: db-data/cbdb_20260313.sqlite3
+
+[2/4] 準備打包來源...
+
+[3/4] 壓縮為 cbdb_20260313.zip...
+壓縮完成，檔案大小: 256M
+
+[4/4] 上傳到 HuggingFace cbdb/cbdb-sqlite...
+上傳 history/cbdb_202603/cbdb_20260313.zip、latest.zip、metadata/2026-03/2026-03-13.json、latest.json...
+
+將 latest.zip 複製到 public 目錄...
+
+================================================
+同步完成!
+================================================
+目標: https://huggingface.co/datasets/cbdb/cbdb-sqlite
+狀態: 已上傳
+檔案大小: 256M
+時間: 2026-03-13 03:15:23
+================================================
+```
+
+#### Automated Cron Job
+
+For weekly automated execution:
+
+<Steps>
+  <Step title="Edit Crontab">
+    ```bash
+    crontab -e
+    ```
+  </Step>
+  
+  <Step title="Add Cron Entry">
+    ```bash
+    # Run every Sunday at 3:00 AM (GMT+8)
+    0 3 * * 0 /path/to/cbdb-online-main-server/scripts/weekly-sqlite-sync.sh >> /var/log/cbdb-sqlite-sync.log 2>&1
+    ```
+  </Step>
+  
+  <Step title="Verify Cron Job">
+    ```bash
+    # List cron jobs
+    crontab -l
+    
+    # Check log file after first run
+    tail -f /var/log/cbdb-sqlite-sync.log
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  The cron job runs in a minimal environment. The script automatically sets up the correct PATH and HOME variables to ensure `hf` CLI is accessible.
+</Note>
+
+### Sync Workflow Details
+
+The `weekly-sqlite-sync.sh` script executes the following stages:
+
+<Accordion title="Stage 1: Requirement Checks">
+  Validates that all required tools are installed:
+  
+  - `zip` command availability
+  - `hf` CLI availability
+  - HuggingFace authentication status
+  
+  If any check fails, the script exits with error message and installation instructions.
+</Accordion>
+
+<Accordion title="Stage 2: Database Export">
+  Calls `export-daily-sqlite.sh` to generate:
+  
+  - `cbdb_YYYYMMDD.sqlite3` - SQLite database file
+  - `cbdb_YYYYMMDD.json` - Metadata file
+  
+  Both files are created in the `db-data/` directory.
+</Accordion>
+
+<Accordion title="Stage 3: Compression">
+  Creates a zip archive with:
+  
+  ```bash
+  zip -j -9 cbdb_YYYYMMDD.zip cbdb_YYYYMMDD.sqlite3 cbdb_YYYYMMDD.json
+  ```
+  
+  - `-j` flag: Store files without directory paths (flat structure)
+  - `-9` flag: Maximum compression level
+</Accordion>
+
+<Accordion title="Stage 4: HuggingFace Upload">
+  Uploads multiple files in a single commit:
+  
+  - `history/cbdb_YYYYMM/cbdb_YYYYMMDD.zip` - Dated archive
+  - `latest.zip` - Always points to most recent export
+  - `metadata/YYYY-MM/YYYY-MM-DD.json` - Dated metadata
+  - `latest.json` - Most recent metadata
+  
+  ```bash
+  hf upload cbdb/cbdb-sqlite \
+    $HF_STAGE_DIR . \
+    --repo-type dataset \
+    --commit-message "Update CBDB SQLite (2026-03-13)"
+  ```
+</Accordion>
+
+<Accordion title="Stage 5: Public Directory Copy">
+  Copies `latest.zip` to `public/` directory:
+  
+  ```bash
+  cp cbdb_YYYYMMDD.zip public/latest.zip
+  ```
+  
+  This makes the file available at:
+  `https://input.cbdb.fas.harvard.edu/latest.zip`
+</Accordion>
+
+<Accordion title="Stage 6: Cleanup">
+  Removes all temporary files:
+  
+  - Original SQLite database
+  - Zip archive from db-data/
+  - Metadata JSON file
+  - Staging directory
+  
+  Only `public/latest.zip` is retained.
+</Accordion>
+
+## Dataset Repository Structure
+
+The HuggingFace dataset repository follows this organization:
+
+```
+cbdb/cbdb-sqlite/
+├── latest.zip                          # Always points to most recent
+├── latest.json                         # Most recent metadata
+├── history/
+│   ├── cbdb_202601/
+│   │   ├── cbdb_20260105.zip
+│   │   ├── cbdb_20260112.zip
+│   │   └── ...
+│   ├── cbdb_202602/
+│   │   └── ...
+│   └── cbdb_202603/
+│       └── cbdb_20260313.zip
+└── metadata/
+    ├── 2026-01/
+    │   ├── 2026-01-05.json
+    │   └── ...
+    ├── 2026-02/
+    │   └── ...
+    └── 2026-03/
+        └── 2026-03-13.json
+```
+
+### Versioning Strategy
+
+- **Monthly directories** - `history/cbdb_YYYYMM/` and `metadata/YYYY-MM/`
+- **Dated files** - `cbdb_YYYYMMDD.zip` and `YYYY-MM-DD.json`
+- **Latest aliases** - `latest.zip` and `latest.json` always point to the most recent version
+
+## Error Handling
+
+The sync script includes comprehensive error handling:
+
+### Missing Tools
+
+```bash
+錯誤: 缺少必要工具：
+  - zip (請安裝: sudo apt-get install zip)
+  - hf (請安裝: pipx install huggingface-hub)
+```
+
+**Solution:** Install the missing tools using the provided commands.
+
+### Authentication Failure
+
+```bash
+錯誤: 未找到 HuggingFace 認證
+
+請使用以下任一方式設定：
+  1. hf auth login（推薦）
+  2. export HF_TOKEN=hf_你的token
+
+Token 可在此建立: https://huggingface.co/settings/tokens
+需要的權限: Repositories → Write
+```
+
+**Solution:** Follow the authentication setup instructions above.
+
+### Export Failure
+
+```bash
+錯誤: 找不到匯出檔案 db-data/cbdb_20260313.sqlite3
+```
+
+**Possible causes:**
+- Database connection failure
+- Insufficient disk space
+- Permission issues on `db-data/` directory
+
+**Solution:** Check database connectivity and disk space, ensure proper permissions.
+
+## Performance Considerations
+
+### Export Duration
+
+Typical export times:
+
+- Small database (< 1GB): 1-2 minutes
+- Medium database (1-5GB): 5-10 minutes
+- Large database (> 5GB): 15-30 minutes
+
+### Upload Duration
+
+Upload time depends on:
+
+- Compressed file size
+- Network bandwidth
+- HuggingFace server response time
+
+Typical upload times for 250MB zip: 2-5 minutes
+
+### Disk Space Requirements
+
+Ensure sufficient disk space in these locations:
+
+| Location | Usage | Typical Size |
+|----------|-------|-------------|
+| `db-data/` | SQLite file + metadata | 2-3x source DB size |
+| `db-data/` | Compressed zip | 30-50% of SQLite size |
+| `public/` | latest.zip copy | Same as zip |
+| `/tmp` | HuggingFace staging | Same as zip |
+
+<Tip>
+  **Space Optimization**
+  
+  The script automatically cleans up temporary files after successful upload, retaining only `public/latest.zip`.
+</Tip>
+
+## Monitoring and Logs
+
+When running via cron, monitor the log file:
+
+```bash
+# View recent log entries
+tail -n 50 /var/log/cbdb-sqlite-sync.log
+
+# Follow log in real-time
+tail -f /var/log/cbdb-sqlite-sync.log
+
+# Search for errors
+grep -i "錯誤\|error\|failed" /var/log/cbdb-sqlite-sync.log
+```
+
+### Log Rotation
+
+To prevent log file from growing indefinitely, set up logrotate:
+
+```bash /etc/logrotate.d/cbdb-sqlite-sync
+/var/log/cbdb-sqlite-sync.log {
+    weekly
+    rotate 12
+    compress
+    missingok
+    notifempty
+}
+```
+
+## Manual Export Only
+
+If you only want to export the database without uploading:
+
+```bash
+# Run export script only
+bash scripts/export-daily-sqlite.sh
+
+# Result will be in db-data/
+ls -lh db-data/cbdb_$(date +%Y%m%d).sqlite3
+```
+
+## Troubleshooting
+
+### Upload Timeout
+
+If upload times out:
+
+```bash
+# Check network connectivity
+ping huggingface.co
+
+# Test hf CLI
+hf auth status
+
+# Retry upload manually
+hf upload cbdb/cbdb-sqlite latest.zip . --repo-type dataset
+```
+
+### Corrupted Zip File
+
+Verify zip integrity:
+
+```bash
+# Test zip file
+zip -T cbdb_20260313.zip
+
+# Extract and verify
+unzip -t cbdb_20260313.zip
+```
+
+### Permission Issues
+
+```bash
+# Ensure proper ownership
+sudo chown -R cbdb:cbdb db-data/
+sudo chown -R cbdb:cbdb public/
+
+# Check execute permissions
+chmod +x scripts/export-daily-sqlite.sh
+chmod +x scripts/weekly-sqlite-sync.sh
+```
+
+## Related Documentation
+
+- [SQLite Data Release Process](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/docs/SQLITE_DATA_RELEASE.md)
+- [SQLite Migration Plan](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/docs/SQLITE_MIGRATION_PLAN.md)
+- [README.md - SQLite Weekly Sync Section](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/README.md#sqlite-每週同步)

@@ -1,0 +1,338 @@
+---
+title: "Name Search API"
+description: "Search for people by name using high-performance inverted index"
+icon: "magnifying-glass"
+---
+
+## Overview
+
+The Name Search API provides efficient searching for historical people by Chinese or romanized names. It uses a specialized inverted index (`CBDB__NAME_FTS`) to support suffix matching and partial name queries.
+
+<Note>
+This API is designed for frontend autocomplete and typeahead search features, providing fast results even with partial name queries.
+</Note>
+
+## Endpoint
+
+```
+GET /api/select/biog_main
+```
+
+**Authentication**: Optional (results may vary based on user permissions)
+
+**Parameters**:
+
+<ParamField path="q" type="string" required>
+  Search query (Chinese characters or romanized name)
+</ParamField>
+
+<ParamField path="limit" type="integer">
+  Maximum number of results to return (default: 20, max: 100)
+</ParamField>
+
+<ParamField path="c_dy" type="integer">
+  Filter by dynasty code (optional)
+</ParamField>
+
+## Request Example
+
+<CodeGroup>
+
+```bash Search by Chinese name
+curl "https://input.cbdb.fas.harvard.edu/api/select/biog_main?q=%E7%8E%8B%E5%AE%89%E7%9F%B3&limit=10"
+```
+
+```bash Search by romanized name
+curl "https://input.cbdb.fas.harvard.edu/api/select/biog_main?q=Wang+Anshi&limit=10"
+```
+
+```bash Search with dynasty filter
+curl "https://input.cbdb.fas.harvard.edu/api/select/biog_main?q=%E7%8E%8B%E5%AE%89%E7%9F%B3&c_dy=15&limit=10"
+```
+
+```javascript JavaScript fetch
+fetch('https://input.cbdb.fas.harvard.edu/api/select/biog_main?q=王安石&limit=10')
+  .then(response => response.json())
+  .then(data => console.log(data));
+```
+
+</CodeGroup>
+
+## Response Format
+
+```json Success response
+{
+  "success": true,
+  "data": [
+    {
+      "c_personid": 1762,
+      "c_name_chn": "王安石",
+      "c_name": "Wang Anshi",
+      "c_surname_chn": "王",
+      "c_dy": 15,
+      "c_dynasty": "Song",
+      "c_dynasty_chn": "宋",
+      "c_index_year": 1068,
+      "c_birthyr": 1021,
+      "c_deathyr": 1086
+    }
+  ],
+  "total": 1
+}
+```
+
+### Response Fields
+
+<ResponseField name="success" type="boolean">
+  Indicates if the request was successful
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of person objects matching the search query
+</ResponseField>
+
+<ResponseField name="total" type="integer">
+  Total number of matching records
+</ResponseField>
+
+### Person Object Fields
+
+<Expandable title="Person fields">
+  <ResponseField name="c_personid" type="integer">
+    Unique person identifier
+  </ResponseField>
+  
+  <ResponseField name="c_name_chn" type="string">
+    Chinese name (traditional characters)
+  </ResponseField>
+  
+  <ResponseField name="c_name" type="string">
+    Romanized name (Pinyin or Wade-Giles)
+  </ResponseField>
+  
+  <ResponseField name="c_surname_chn" type="string">
+    Chinese surname
+  </ResponseField>
+  
+  <ResponseField name="c_dy" type="integer">
+    Dynasty code (foreign key to DYNASTIES table)
+  </ResponseField>
+  
+  <ResponseField name="c_dynasty" type="string">
+    Dynasty name (English)
+  </ResponseField>
+  
+  <ResponseField name="c_dynasty_chn" type="string">
+    Dynasty name (Chinese)
+  </ResponseField>
+  
+  <ResponseField name="c_index_year" type="integer">
+    Representative year for this person
+  </ResponseField>
+  
+  <ResponseField name="c_birthyr" type="integer">
+    Birth year (may be null)
+  </ResponseField>
+  
+  <ResponseField name="c_deathyr" type="integer">
+    Death year (may be null)
+  </ResponseField>
+</Expandable>
+
+## Search Strategies
+
+The Name Search API uses multiple strategies to find matches:
+
+### 1. Inverted Index Lookup
+
+For Chinese name searches, the API queries the `CBDB__NAME_FTS` inverted index:
+
+```sql Index query
+SELECT DISTINCT c_personid 
+FROM CBDB__NAME_FTS 
+WHERE token LIKE '石%'
+LIMIT 20;
+```
+
+This supports:
+- **Exact character match**: 王安石
+- **Prefix match**: 王安*
+- **Suffix match**: *安石
+- **Substring match**: *安*
+
+### 2. Direct Name Matching
+
+For romanized names or when index search fails:
+
+```sql Direct match
+SELECT * FROM BIOG_MAIN
+WHERE c_name LIKE 'Wang Anshi%'
+   OR c_name_chn LIKE '王安石%'
+LIMIT 20;
+```
+
+### 3. Variant Character Normalization
+
+Before searching, the system normalizes variant characters using `CBDB__TRAD_SIMP_MAP`:
+
+- 菴 (菴) → 庵 (庵)
+- 敗 (敗) → 考 (考)
+- 嶽 (嶽) → 岳 (岳)
+
+This ensures searches work with any character variant.
+
+## Result Ranking
+
+Results are ranked by match quality:
+
+1. **Exact match** (highest priority)
+   - Full name matches query exactly
+   
+2. **Prefix match**
+   - Name starts with query string
+   
+3. **Contains match**
+   - Name contains query string anywhere
+   
+4. **Token match** (lowest priority)
+   - Individual characters/tokens match
+
+## Performance Considerations
+
+<AccordionGroup>
+  <Accordion title="Index performance">
+    The inverted index (`CBDB__NAME_FTS`) provides O(log n) lookup time for:
+    - Prefix queries: `LIKE 'prefix%'`
+    - Exact token matches
+    
+    Suffix and substring queries are slightly slower but still efficient.
+  </Accordion>
+  
+  <Accordion title="Query limits">
+    - Default limit: 20 results
+    - Maximum limit: 100 results
+    - Pagination not supported (use `/basicinformation` for paginated results)
+  </Accordion>
+  
+  <Accordion title="Caching">
+    Results are not cached. For high-traffic applications, consider implementing client-side caching or using a reverse proxy cache.
+  </Accordion>
+</AccordionGroup>
+
+## Error Responses
+
+```json Missing query parameter (400)
+{
+  "success": false,
+  "message": "Query parameter 'q' is required"
+}
+```
+
+```json Invalid dynasty code (400)
+{
+  "success": false,
+  "message": "Invalid dynasty code"
+}
+```
+
+```json No results (200)
+{
+  "success": true,
+  "data": [],
+  "total": 0
+}
+```
+
+## Frontend Integration
+
+### Autocomplete Example
+
+```javascript Vue 3 autocomplete
+<template>
+  <input 
+    v-model="searchQuery"
+    @input="handleSearch"
+    placeholder="搜索人物姓名"
+  />
+  <ul v-if="results.length">
+    <li v-for="person in results" :key="person.c_personid">
+      {{ person.c_name_chn }} ({{ person.c_dynasty_chn }})
+    </li>
+  </ul>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+import { debounce } from 'lodash';
+
+const searchQuery = ref('');
+const results = ref([]);
+
+const handleSearch = debounce(async (event) => {
+  const query = event.target.value;
+  if (query.length < 2) {
+    results.value = [];
+    return;
+  }
+  
+  const response = await fetch(
+    `/api/select/biog_main?q=${encodeURIComponent(query)}&limit=10`
+  );
+  const data = await response.json();
+  
+  if (data.success) {
+    results.value = data.data;
+  }
+}, 300);
+</script>
+```
+
+## Index Maintenance
+
+### Rebuild Name Search Index
+
+If search results seem incomplete or stale:
+
+```bash Rebuild index
+php artisan cbdb:rebuild-name-index
+```
+
+This command:
+1. Truncates `CBDB__NAME_FTS`
+2. Tokenizes all names in `BIOG_MAIN`
+3. Rebuilds the inverted index
+
+<Warning>
+Index rebuilding can take several minutes for large databases. It's safe to run during normal operations but may cause temporary search slowdowns.
+</Warning>
+
+### Automatic Index Updates
+
+The index is automatically updated when:
+- New person records are created
+- Person names are modified
+- Alternative names are added or changed
+
+This is handled by `NameSearchIndexService`:
+
+```php Auto-update
+// Triggered automatically on name changes
+$nameSearchIndexService->updatePerson($personId);
+```
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Search Guide" icon="magnifying-glass" href="/guides/search">
+    Learn about all search features
+  </Card>
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Understand CBDB__NAME_FTS structure
+  </Card>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Secure your API requests
+  </Card>
+  <Card title="API Overview" icon="book" href="/api/overview">
+    Explore all available endpoints
+  </Card>
+</CardGroup>

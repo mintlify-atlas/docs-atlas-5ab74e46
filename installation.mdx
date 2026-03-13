@@ -1,0 +1,640 @@
+---
+title: Installation Guide
+description: Complete guide to setting up CBDB Online development environment
+---
+
+## System Requirements
+
+Before installing CBDB Online, ensure your system meets these requirements:
+
+<CardGroup cols={2}>
+  <Card title="PHP" icon="php">
+    **Version**: 8.2+ (8.4 recommended)
+    
+    PHP 8.4 offers the best performance and security. Laravel 12 fully supports PHP 8.4.
+  </Card>
+  
+  <Card title="Database" icon="database">
+    **MariaDB**: 10.3.39+
+    
+    Or compatible MySQL version. SQLite is supported for testing and exports.
+  </Card>
+  
+  <Card title="Node.js" icon="node-js">
+    **Version**: 22.x
+    
+    With npm 10.x for frontend asset compilation.
+  </Card>
+  
+  <Card title="Web Server" icon="server">
+    **Caddy** (recommended)
+    
+    Or nginx/Apache with proper PHP-FPM configuration.
+  </Card>
+</CardGroup>
+
+<Warning>
+**Critical**: The minimum PHP version is 8.2.0 due to the dependency on `phpmyadmin/sql-parser` v6.0. Using PHP 8.1 or earlier will cause composer installation to fail.
+</Warning>
+
+## Installation Steps
+
+### 1. Clone the Repository
+
+Clone the CBDB Online repository to your local machine:
+
+```bash
+git clone https://github.com/cbdb-project/cbdb-online-main-server.git
+cd cbdb-online-main-server
+```
+
+<Note>
+The repository is hosted on GitHub. Make sure you have appropriate access permissions if working with a private fork.
+</Note>
+
+### 2. Install PHP Dependencies
+
+Use Composer to install all PHP dependencies:
+
+```bash
+composer install
+```
+
+This will install:
+
+<AccordionGroup>
+  <Accordion title="Core Laravel Packages">
+    - **laravel/framework**: ^12.0 - Main Laravel framework
+    - **laravel/sanctum**: ^4.0 - API authentication
+    - **laravel/tinker**: ^2.8 - Interactive REPL
+    - **laravel/ui**: ^4.5 - UI scaffolding
+  </Accordion>
+  
+  <Accordion title="Database & Utilities">
+    - **guzzlehttp/guzzle**: ^7.2 - HTTP client
+    - **nesbot/carbon**: ^3.0 - Date/time manipulation
+    - **phpmyadmin/sql-parser**: ^6.0 - SQL parsing for security
+  </Accordion>
+  
+  <Accordion title="CBDB-Specific Packages">
+    - **laravel/mcp**: ^0.5.7 - Model Context Protocol support
+    - **laracasts/flash**: ^3.0 - Flash notifications
+    - **promphp/prometheus_client_php**: ^2.14 - Metrics collection
+  </Accordion>
+  
+  <Accordion title="Development Dependencies">
+    - **phpunit/phpunit**: ^11.0 - Testing framework
+    - **friendsofphp/php-cs-fixer**: ^3.0 - Code style fixer
+    - **spatie/laravel-ignition**: ^2.0 || ^3.0 - Error page
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+If you encounter memory issues during `composer install`, try: `php -d memory_limit=-1 /usr/local/bin/composer install`
+</Tip>
+
+### 3. Install Node.js Dependencies
+
+Install frontend dependencies using npm:
+
+```bash
+npm install
+```
+
+This installs:
+
+<CodeGroup>
+
+```json Build Tools
+{
+  "vite": "^7.2.4",
+  "laravel-vite-plugin": "^2.0.1",
+  "@vitejs/plugin-vue": "^6.0.2",
+  "@vue/compiler-sfc": "^3.5.12"
+}
+```
+
+```json UI Libraries
+{
+  "admin-lte": "^3.2.0",
+  "jquery": "^3.5.0",
+  "datatables.net": "^1.13.8",
+  "datatables.net-bs4": "^2.3.5",
+  "@ttskch/select2-bootstrap4-theme": "^1.5.2"
+}
+```
+
+```json Application Dependencies
+{
+  "vue": "^3.0.0",
+  "axios": "^1.8.2",
+  "cn-era": "^0.4.1",
+  "sql-formatter": "^15.6.12"
+}
+```
+
+</CodeGroup>
+
+<Note>
+The project requires **Node.js 22** and **npm 10** as specified in the engines field of package.json. Using other versions may cause compatibility issues.
+</Note>
+
+#### Installing Node.js 22 on Ubuntu
+
+If you need to install the correct Node.js version, use nvm (Node Version Manager):
+
+```bash
+# Install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+
+# Load nvm (or restart terminal)
+source ~/.bashrc
+
+# Install Node.js 22
+nvm install 22
+nvm use 22
+
+# Verify versions
+node --version  # Should show v22.x.x
+npm --version   # Should show 10.x.x
+```
+
+### 4. Environment Configuration
+
+Copy the example environment file and configure it:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` with your configuration:
+
+<Steps>
+  <Step title="Application Settings">
+    ```bash
+    APP_NAME="CBDB Online"
+    APP_ENV=local
+    APP_DEBUG=true
+    APP_URL=http://localhost:8000
+    LOG_CHANNEL=stack
+    LOG_LEVEL=debug
+    ```
+  </Step>
+  
+  <Step title="Database Connection">
+    ```bash
+    DB_CONNECTION=mysql
+    DB_HOST=127.0.0.1
+    DB_PORT=3306
+    DB_DATABASE=cbdb_online
+    DB_USERNAME=cbdb_user
+    DB_PASSWORD=your_password
+    
+    # CRITICAL: Must match APP_TIMEZONE (use numeric offset)
+    DB_TIMEZONE=+08:00
+    ```
+    
+    <Warning>
+    **Important**: `DB_TIMEZONE` must use numeric offset format (e.g., `+08:00`) instead of named timezones (e.g., `Asia/Shanghai`). Named timezones require MySQL time zone tables to be loaded and will cause "Unknown or incorrect time zone" errors if not available.
+    </Warning>
+  </Step>
+  
+  <Step title="Migration User (Recommended)">
+    ```bash
+    # Separate user for migrations with schema change privileges
+    DB_MIGRATE_USERNAME=cbdb_migrate
+    DB_MIGRATE_PASSWORD=your_migrate_password
+    ```
+    
+    <Tip>
+    For security, use separate database accounts:
+    - Regular application user: CRUD privileges only (no DROP/ALTER/CREATE)
+    - Migration user: Schema modification privileges
+    
+    This reduces risk when running baseline migrations that touch the full schema.
+    </Tip>
+  </Step>
+  
+  <Step title="Cache & Session">
+    ```bash
+    CACHE_DRIVER=file
+    SESSION_DRIVER=file
+    QUEUE_CONNECTION=sync
+    
+    # For HTTPS environments:
+    # SESSION_SECURE_COOKIE=true
+    # SESSION_DOMAIN=.yourdomain.com
+    ```
+  </Step>
+  
+  <Step title="Optional Services">
+    ```bash
+    # Google Gemini API for Natural Language Query
+    GEMINI_API_KEY=your_api_key
+    GEMINI_API_ENDPOINT=https://generativelanguage.googleapis.com/v1beta/openai/chat/completions
+    GEMINI_MODEL=gemini-3-flash-preview
+    GEMINI_MAX_COMPLETION_TOKENS=8192
+    
+    # Prometheus Metrics
+    PROMETHEUS_ENABLED=false
+    PROMETHEUS_NAMESPACE=cbdb
+    PROMETHEUS_STORAGE_ADAPTER=apc
+    
+    # MCP (Model Context Protocol)
+    MCP_REQUIRED_ABILITY=mcp:read
+    ```
+  </Step>
+</Steps>
+
+### 5. Generate Application Key
+
+Generate a unique application encryption key:
+
+```bash
+php artisan key:generate
+```
+
+This sets the `APP_KEY` in your `.env` file, which Laravel uses for encryption and session security.
+
+### 6. Database Setup
+
+Create the database and run migrations:
+
+<Steps>
+  <Step title="Create database">
+    ```bash
+    # Connect to MariaDB
+    mysql -u root -p
+    
+    # Create database and users
+    CREATE DATABASE cbdb_online CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    
+    # Application user (CRUD only)
+    CREATE USER 'cbdb_user'@'localhost' IDENTIFIED BY 'your_password';
+    GRANT SELECT, INSERT, UPDATE, DELETE ON cbdb_online.* TO 'cbdb_user'@'localhost';
+    
+    # Migration user (schema changes)
+    CREATE USER 'cbdb_migrate'@'localhost' IDENTIFIED BY 'your_migrate_password';
+    GRANT ALL PRIVILEGES ON cbdb_online.* TO 'cbdb_migrate'@'localhost';
+    
+    FLUSH PRIVILEGES;
+    ```
+  </Step>
+  
+  <Step title="Run migrations">
+    ```bash
+    php artisan migrate
+    ```
+    
+    This creates all necessary tables including:
+    - Core biographical tables (BIOG_MAIN, DYNASTIES, etc.)
+    - Code tables (ADDR_CODES, OFFICE_CODES, etc.)
+    - System tables (users, operations, etc.)
+    - Internal helper tables (CBDB__NAME_FTS, CBDB__TRAD_SIMP_MAP)
+    
+    <Note>
+    The project uses a baseline migration approach. The main schema is defined in `database/migrations/2025_01_01_000000_create_baseline_schema.php`, with subsequent migrations for incremental changes.
+    </Note>
+  </Step>
+  
+  <Step title="Import reference data (if available)">
+    ```bash
+    # Import traditional-simplified character mapping
+    php artisan cbdb:import-trad-simp-map --truncate
+    
+    # Additional data imports depend on your data source
+    # Contact your project administrator for data files
+    ```
+  </Step>
+</Steps>
+
+### 7. Build Frontend Assets
+
+Compile frontend assets using Vite:
+
+<Tabs>
+  <Tab title="Development">
+    For development with hot module replacement:
+    
+    ```bash
+    npm run dev
+    ```
+    
+    This starts the Vite development server. Keep it running while developing.
+  </Tab>
+  
+  <Tab title="Production">
+    For production deployment:
+    
+    ```bash
+    npm run build
+    # or
+    npm run prod
+    ```
+    
+    This creates optimized production bundles in the `public/build` directory.
+  </Tab>
+</Tabs>
+
+<Warning>
+Always run `npm run build` before committing frontend changes. The project expects compiled assets to be present.
+</Warning>
+
+### 8. Create Admin User
+
+Create your first administrator account:
+
+```bash
+php artisan cbdb:manage-user
+```
+
+Follow the interactive prompts:
+
+```
+Choose action:
+1. Create new user
+2. Update existing user
+3. List all users
+
+Selection: 1
+
+Enter username: admin
+Enter full name: Administrator
+Enter email: admin@example.com
+Enter password: ********
+
+Select role:
+1. regular
+2. expert
+3. crowdsourcing
+4. super-admin
+
+Selection: 4
+
+Set as active? (yes/no): yes
+```
+
+<Tip>
+You can also use command-line mode for scripted user creation:
+
+```bash
+php artisan cbdb:manage-user create \
+  --username=admin \
+  --name="Administrator" \
+  --email=admin@example.com \
+  --password=secret \
+  --role=super-admin \
+  --active
+```
+</Tip>
+
+### 9. Start the Development Server
+
+Run the Laravel development server:
+
+```bash
+php artisan serve
+```
+
+The application will be available at [http://localhost:8000](http://localhost:8000).
+
+<Note>
+For production deployment, use a proper web server (Caddy, nginx, Apache) with PHP-FPM. The Laravel development server is not suitable for production use.
+</Note>
+
+## Verification
+
+Verify your installation:
+
+<Steps>
+  <Step title="Access the application">
+    Open [http://localhost:8000](http://localhost:8000) in your browser
+  </Step>
+  
+  <Step title="Log in">
+    Use the admin credentials you created
+  </Step>
+  
+  <Step title="Check dashboard">
+    You should see the AdminLTE 3 dashboard with navigation menu
+  </Step>
+  
+  <Step title="Test database connection">
+    Navigate to any data browsing page (e.g., /codes/DYNASTIES) to verify database connectivity
+  </Step>
+  
+  <Step title="Run tests">
+    ```bash
+    ./vendor/bin/phpunit
+    ```
+    
+    All tests should pass. If tests fail, check your database configuration and ensure migrations ran successfully.
+  </Step>
+</Steps>
+
+## Production Deployment
+
+For production deployment, additional steps are required:
+
+### Web Server Configuration
+
+<Tabs>
+  <Tab title="Caddy">
+    Create a Caddyfile:
+    
+    ```caddy
+    input.cbdb.fas.harvard.edu {
+        root * /path/to/cbdb-online-main-server/public
+        php_fastcgi unix//var/run/php/php8.4-fpm.sock
+        file_server
+        
+        encode gzip
+        
+        # Laravel-specific rules
+        try_files {path} /index.php?{query}
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Nginx">
+    Create an nginx configuration:
+    
+    ```nginx
+    server {
+        listen 80;
+        server_name input.cbdb.fas.harvard.edu;
+        root /path/to/cbdb-online-main-server/public;
+        
+        index index.php;
+        
+        location / {
+            try_files $uri $uri/ /index.php?$query_string;
+        }
+        
+        location ~ \.php$ {
+            fastcgi_pass unix:/var/run/php/php8.4-fpm.sock;
+            fastcgi_index index.php;
+            fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+            include fastcgi_params;
+        }
+        
+        location ~ /\.(?!well-known).* {
+            deny all;
+        }
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Production Environment Settings
+
+```bash
+APP_ENV=production
+APP_DEBUG=false
+
+# Use appropriate cache drivers
+CACHE_DRIVER=redis
+SESSION_DRIVER=redis
+QUEUE_CONNECTION=redis
+
+# Enable HTTPS settings
+SESSION_SECURE_COOKIE=true
+SESSION_DOMAIN=.cbdb.fas.harvard.edu
+```
+
+### File Permissions
+
+Set correct permissions:
+
+```bash
+# Make storage and bootstrap/cache writable
+chmod -R 775 storage bootstrap/cache
+
+# Set web server user as owner
+chown -R caddy:caddy /path/to/cbdb-online-main-server
+
+# For log files
+chown caddy storage/logs/laravel.log
+```
+
+### Optimization
+
+Optimize the application for production:
+
+```bash
+# Cache configuration
+php artisan config:cache
+
+# Cache routes
+php artisan route:cache
+
+# Cache views
+php artisan view:cache
+
+# Optimize autoloader
+composer install --optimize-autoloader --no-dev
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Composer install fails with PHP version error">
+    Error: `phpmyadmin/sql-parser requires php ^8.2`
+    
+    **Solution**: Upgrade PHP to 8.2 or higher. Check your PHP version:
+    ```bash
+    php -v
+    ```
+    
+    On Ubuntu, install PHP 8.4:
+    ```bash
+    sudo add-apt-repository ppa:ondrej/php
+    sudo apt update
+    sudo apt install php8.4 php8.4-fpm php8.4-mysql php8.4-xml php8.4-mbstring php8.4-curl
+    ```
+  </Accordion>
+  
+  <Accordion title="npm install fails with version mismatch">
+    Error: Package requires Node 22 but you have Node 18
+    
+    **Solution**: Install Node.js 22 using nvm (see step 3 above).
+  </Accordion>
+  
+  <Accordion title="Migration fails with Unknown time zone error">
+    Error: `Unknown or incorrect time zone: 'Asia/Shanghai'`
+    
+    **Solution**: Change `DB_TIMEZONE` in `.env` to numeric format:
+    ```bash
+    DB_TIMEZONE=+08:00
+    ```
+    
+    Do not use named timezones like `Asia/Shanghai` unless you've loaded MySQL time zone tables.
+  </Accordion>
+  
+  <Accordion title="Frontend assets not loading">
+    Symptoms: Blank page, missing styles, or JavaScript errors
+    
+    **Solution**: Rebuild frontend assets:
+    ```bash
+    rm -rf node_modules
+    npm cache clear --force
+    npm install
+    npm run build
+    ```
+    
+    Check that `public/build` directory exists and contains manifest.json.
+  </Accordion>
+  
+  <Accordion title="Database connection refused">
+    Error: `SQLSTATE[HY000] [2002] Connection refused`
+    
+    **Solutions**:
+    1. Verify MariaDB is running: `systemctl status mariadb`
+    2. Check DB_HOST in .env matches your database server
+    3. Verify database user permissions
+    4. Test connection: `mysql -u cbdb_user -p cbdb_online`
+  </Accordion>
+  
+  <Accordion title="Laravel log not recording">
+    Symptoms: No entries in `storage/logs/laravel.log`
+    
+    **Solution**: Fix file ownership:
+    ```bash
+    sudo chown -R caddy:caddy storage/logs
+    chmod -R 775 storage/logs
+    ```
+    
+    Replace `caddy` with your web server user (e.g., `www-data` for Apache/nginx).
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Development Workflow" icon="code-branch" href="/development/workflow">
+    Learn about the development process, testing, and contribution guidelines
+  </Card>
+  
+  <Card title="Database Schema" icon="diagram-project" href="/reference/database-schema">
+    Explore the complete database structure and relationships
+  </Card>
+  
+  <Card title="API Documentation" icon="book" href="/api/overview">
+    Understand available APIs for programmatic access
+  </Card>
+  
+  <Card title="Deployment Guide" icon="rocket" href="/deployment/production">
+    Detailed production deployment instructions
+  </Card>
+</CardGroup>
+
+## Additional Resources
+
+- **GitHub Repository**: [cbdb-project/cbdb-online-main-server](https://github.com/cbdb-project/cbdb-online-main-server)
+- **AGENTS Guide**: Read `AGENTS.md` in the repository for AI agent development instructions
+- **Database Guide**: See `DATABASE.md` for comprehensive database documentation
+- **Changelog**: Review `CHANGELOG.md` for recent updates and changes
+
+<Tip>
+For development best practices, testing guidelines, and migration instructions, refer to the `.claude/skills/` directory in the repository. These skill files contain detailed workflows for common development tasks.
+</Tip>

@@ -1,0 +1,579 @@
+---
+title: Docker 開發環境
+description: 使用 Docker Compose 快速搭建 CBDB Online 開發環境，基於 FrankenPHP 單容器架構
+---
+
+本文檔說明如何使用 Docker 快速搭建 CBDB Online 開發環境，無需手動安裝 PHP、Composer、MySQL 等依賴。
+
+## 架構概述
+
+### FrankenPHP 單容器架構
+
+CBDB Online Docker 環境採用 **FrankenPHP** 作為核心架構，這是新一代 PHP 應用伺服器：
+
+<CardGroup cols={2}>
+  <Card title="架構特點" icon="cube">
+    - 單容器集成 Web 伺服器
+    - 替代傳統 PHP-FPM + Nginx 雙容器
+    - 基於 Caddy Web Server
+  </Card>
+  
+  <Card title="性能優勢" icon="rocket">
+    - Classic 模式：兼容傳統 PHP 應用
+    - Worker 模式：性能提升 10 倍以上
+    - 支持 HTTP/2、HTTP/3
+  </Card>
+</CardGroup>
+
+### 技術棧
+
+- **PHP**: 8.4.15
+- **SQLite**: 3.45.0+ (從官網編譯)
+- **Node.js**: 22.x
+- **FrankenPHP**: 1.x
+- **容器名稱**: `cbdb-frankenphp`
+
+<Note>
+SQLite 從官網下載並編譯安裝，而非使用 `apt install sqlite3`。原因：Ubuntu 24.04 LTS 的 apt 倉庫中的 SQLite3 版本存在已知問題，從官網編譯可確保最新穩定版本和最佳性能。
+</Note>
+
+## 目錄結構
+
+```
+/
+├── docker/
+│   ├── Dockerfile      # FrankenPHP Dockerfile
+│   ├── Caddyfile       # Caddy Web 伺服器配置
+│   ├── entrypoint.sh   # 容器啟動腳本
+│   └── php.ini         # PHP 配置
+├── docker-compose.yml  # Docker Compose 配置
+├── db-data/            # SQLite 資料庫持久化目錄 (Docker Volume)
+├── database/           # 資料庫模板目錄
+│   └── database.sqlite3  # 初始資料庫模板
+├── scripts/            # 腳本目錄
+│   └── patch_sqlite_db_for_dev.sh  # Schema 補丁腳本
+├── .env                # 環境配置檔案
+└── .env.docker.example # Docker 環境配置示例
+```
+
+### 默認配置
+
+- **架構**: FrankenPHP (1 個容器)
+- **資料庫**: SQLite (`/app/db-data/database.sqlite3`)
+- **端口**: 8000
+- **工作目錄**: `/app`
+
+## 快速開始
+
+### 前置要求
+
+- Docker Engine 20.10+
+- Docker Compose 2.0+
+- Git
+
+### 1. 配置環境變量
+
+<Steps>
+  <Step title="複製環境配置示例">
+    ```bash
+    cp .env.docker.example .env
+    ```
+  </Step>
+  
+  <Step title="確認資料庫配置">
+    編輯 `.env` 檔案，確保以下配置正確：
+    
+    ```env
+    DB_CONNECTION=sqlite
+    DB_DATABASE=/app/db-data/database.sqlite3
+    ```
+    
+    <Note>
+    路徑必須是容器內的持久化路徑 `/app/db-data/database.sqlite3`。容器啟動腳本會自動檢測並更新此路徑。
+    </Note>
+  </Step>
+</Steps>
+
+### 2. 生成應用密鑰
+
+首次運行需要生成應用密鑰：
+
+```bash
+# 如果 .env 中 APP_KEY 為空
+docker compose run --rm app php artisan key:generate
+```
+
+### 3. 啟動服務
+
+```bash
+docker compose up --build
+```
+
+<Note>
+首次啟動會構建鏡像，大約需要 3-5 分鐘。容器啟動時會自動執行 `composer install` 和緩存清理。後續啟動只需幾秒鐘。
+</Note>
+
+### 4. 訪問應用
+
+打開瀏覽器訪問：
+
+```
+http://localhost:8000
+```
+
+### 5. 初始管理員帳戶
+
+容器首次啟動會自動創建默認的超級管理員帳戶：
+
+<Card title="默認登錄憑證" icon="user">
+  - **Email**: `admin@example.com`
+  - **Password**: `password`
+</Card>
+
+<Warning>
+登錄後台後**強烈建議**立即修改密碼！
+</Warning>
+
+## 資料庫初始化
+
+### 自動初始化邏輯
+
+容器啟動時會自動處理資料庫初始化，按以下優先級：
+
+1. **持久化優先**：如果 `db-data/database.sqlite3` 已存在，則直接使用
+2. **模板初始化**：如果持久化文件不存在，但 `database/database.sqlite3` 存在，則複製模板到持久化目錄
+3. **自動創建**：如果兩者都不存在，則創建一個空的資料庫文件
+
+### 手動準備資料庫（可選）
+
+如果需要從生產環境的 MySQL 導出數據到 SQLite：
+
+```bash
+php artisan db:export-to-sqlite \
+  --output=database/database.sqlite3 \
+  --tables=BIOG_MAIN,DYNASTIES,ADDR_CODES # 等 77 個表
+```
+
+<Tip>
+完整的 77 個表格列表請參考 `scripts/export-daily-sqlite.sh` 中的 `TABLES` 陣列。
+</Tip>
+
+## Docker Compose 配置
+
+### docker-compose.yml 詳解
+
+```yaml
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: cbdb-frankenphp
+    volumes:
+      # 代碼映射，git pull 即可生效
+      - .:/app
+      # 獨立的 vendor 目錄（避免本地和容器衝突）
+      - vendor:/app/vendor
+      # 獨立的 node_modules 目錄
+      - node_modules:/app/node_modules
+      # SQLite 資料庫目錄（Named Volume 持久化）
+      - db_data:/app/db-data
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      DB_CONNECTION: sqlite
+      DB_DATABASE: /app/db-data/database.sqlite3
+      SERVER_NAME: :80
+    ports:
+      - "8000:80"  # 本地 8000 映射到容器 80
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  vendor:
+  node_modules:
+  db_data:
+```
+
+### Dockerfile 多階段構建
+
+Dockerfile 使用多階段構建優化鏡像大小：
+
+```dockerfile
+# 階段 1: 構建 SQLite
+FROM dunglas/frankenphp:1-php8.4.15 AS build
+WORKDIR /build
+
+# 安裝構建依賴
+RUN apt-get update && apt-get install -y \
+    build-essential wget git unzip ca-certificates
+
+# 從官網下載並編譯 SQLite 3.45.0
+ENV SQLITE_VERSION=3450000
+ENV SQLITE_YEAR=2024
+RUN cd /tmp \
+    && wget https://www.sqlite.org/${SQLITE_YEAR}/sqlite-autoconf-${SQLITE_VERSION}.tar.gz \
+    && tar xzf sqlite-autoconf-${SQLITE_VERSION}.tar.gz \
+    && cd sqlite-autoconf-${SQLITE_VERSION} \
+    && ./configure --prefix=/usr/local \
+    && make -j$(nproc) && make install
+
+# 階段 2: 運行時環境
+FROM dunglas/frankenphp:1-php8.4.15
+WORKDIR /app
+
+# 僅安裝運行時依賴
+RUN apt-get update && apt-get install -y \
+    tini zip unzip curl ca-certificates nodejs
+
+# 從構建階段複製 SQLite 二進制文件
+COPY --from=build /usr/local/bin/sqlite3 /usr/local/bin/
+COPY --from=build /usr/local/lib/libsqlite3.so* /usr/local/lib/
+
+# 安裝 PHP 擴展
+RUN install-php-extensions \
+    pdo_sqlite pdo_mysql gd mbstring \
+    exif pcntl bcmath opcache
+
+# 複製應用代碼
+COPY . /app
+
+# 設置權限
+RUN mkdir -p storage/framework/{sessions,views,cache} \
+    && chown -R www-data:www-data storage bootstrap/cache
+
+EXPOSE 80
+ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+```
+
+<Tip>
+如需更新 SQLite 版本，修改 Dockerfile 中的環境變量：
+
+```dockerfile
+ENV SQLITE_VERSION=3450000  # 對應 3.45.0
+ENV SQLITE_YEAR=2024
+```
+</Tip>
+
+## 常用命令
+
+### 服務管理
+
+```bash
+# 前台運行，查看日誌
+docker compose up
+
+# 後台運行
+docker compose up -d
+
+# 停止並刪除容器
+docker compose down
+
+# 僅停止容器
+docker compose stop
+
+# 重新構建
+docker compose up --build
+
+# 完全重新構建（不使用緩存）
+docker compose build --no-cache
+```
+
+### Laravel 命令
+
+```bash
+# 運行遷移
+docker compose exec app php artisan migrate
+
+# 清除緩存
+docker compose exec app php artisan cache:clear
+docker compose exec app php artisan config:clear
+docker compose exec app php artisan route:clear
+docker compose exec app php artisan view:clear
+
+# 生成應用密鑰
+docker compose exec app php artisan key:generate
+
+# 進入容器 Bash
+docker compose exec app bash
+
+# 運行 Composer
+docker compose exec app composer install
+docker compose exec app composer update
+
+# 查看 FrankenPHP 狀態
+docker compose exec app frankenphp version
+```
+
+### 查看日誌
+
+```bash
+# 查看所有服務日誌
+docker compose logs
+
+# 查看應用日誌
+docker compose logs app
+
+# 實時查看日誌
+docker compose logs -f
+```
+
+## 開發工作流
+
+### 修改代碼
+
+直接在本地編輯器修改代碼，容器會自動映射最新的代碼：
+
+```bash
+# 代碼映射： . -> /app
+```
+
+刷新瀏覽器即可看到變化（無需重啟容器）。
+
+### 更新依賴
+
+```bash
+# 如果 composer.json 有變化
+docker compose exec app composer install
+
+# 如果需要重新構建鏡像
+docker compose up --build
+```
+
+### 拉取最新代碼
+
+```bash
+git pull
+# 瀏覽器刷新即可看到變化
+```
+
+## 資料庫管理
+
+### 查看 SQLite 數據
+
+**方式一：使用 SQLite 客戶端**
+
+```bash
+# 安裝 sqlite3
+# macOS
+brew install sqlite
+
+# Linux
+sudo apt-get install sqlite3
+
+# 打開資料庫
+sqlite3 db-data/database.sqlite3
+
+# SQLite 命令
+.tables              # 查看所有表
+.schema table_name   # 查看表結構
+SELECT * FROM users; # 執行查詢
+.quit                # 退出
+```
+
+**方式二：在容器內查看**
+
+```bash
+docker compose exec app sqlite3 /app/db-data/database.sqlite3
+```
+
+### 備份資料庫
+
+```bash
+# 備份持久化目錄下的資料庫
+cp db-data/database.sqlite3 db-data/database.sqlite3.backup
+```
+
+### 從 MySQL 重新導出
+
+```bash
+# 確保 .env 配置為 MySQL
+php artisan db:export-to-sqlite --output=database/database.sqlite3
+
+# 然後切換回 SQLite 配置並重啟容器
+docker compose restart
+```
+
+## 使用官方 CBDB SQLite 資料庫
+
+如需使用包含完整數據的官方 CBDB SQLite 資料庫：
+
+<Steps>
+  <Step title="準備官方資料庫">
+    獲取包含 77 個表格的 CBDB 官方最新 SQLite 資料庫（例如 `cbdb_20251223.db`），將其重命名為 `database/database.sqlite3`。
+  </Step>
+  
+  <Step title="補足 Schema">
+    官方資料庫缺少 Laravel 運行所需的管理表。在容器啟動後，運行補丁腳本：
+    
+    ```bash
+    docker compose exec app bash scripts/patch_sqlite_db_for_dev.sh
+    ```
+    
+    此腳本會添加 9 個表：`CBDB__NAME_FTS`, `CBDB__TRAD_SIMP_MAP`, `migrations`, `operations`, `password_resets`, `personal_access_tokens`, `pinyin`, `users`
+    
+    <Warning>
+    如果這些表中的任何一個已存在，腳本會報錯並停止。需手動檢查並刪除已存在的表格後再重新執行。
+    </Warning>
+  </Step>
+  
+  <Step title="啟動並登錄">
+    啟動 Docker 並訪問應用：
+    
+    ```bash
+    docker compose up -d
+    ```
+    
+    使用管理員帳戶登錄 `http://localhost:8000/`
+  </Step>
+  
+  <Step title="灌入特定表內容">
+    登錄後訪問表格維護頁面：
+    
+    ```
+    http://localhost:8000/admin/cbdb-table-maintenance
+    ```
+    
+    依次執行以下操作：
+    1. **灌入 CBDB__TRAD_SIMP_MAP**：初始化繁簡轉換映射表
+    2. **灌入 CBDB__NAME_FTS**：初始化姓名全文搜索索引表
+  </Step>
+</Steps>
+
+## Worker 模式（高性能）
+
+如需更高性能，可以啟用 Laravel Octane Worker 模式：
+
+<Steps>
+  <Step title="安裝 Laravel Octane">
+    ```bash
+    docker compose exec app composer require laravel/octane
+    ```
+  </Step>
+  
+  <Step title="安裝 FrankenPHP 驅動">
+    ```bash
+    docker compose exec app php artisan octane:install --server=frankenphp
+    ```
+  </Step>
+  
+  <Step title="修改 entrypoint.sh">
+    修改 `docker/entrypoint.sh` 最後一行：
+    
+    ```bash
+    # 從
+    exec frankenphp run --config /etc/caddy/Caddyfile
+    
+    # 改為
+    exec php artisan octane:start --server=frankenphp --host=0.0.0.0 --port=80
+    ```
+  </Step>
+  
+  <Step title="重新構建並啟動">
+    ```bash
+    docker compose down
+    docker compose up --build
+    ```
+  </Step>
+</Steps>
+
+### Worker 模式注意事項
+
+<Warning>
+- ⚠️ 代碼修改後需要重啟容器才能生效
+- ⚠️ 需要注意內存洩漏和全局狀態管理
+- ⚠️ 適合生產環境，不適合頻繁修改代碼的開發環境
+- ✅ 性能可提升 10 倍以上
+</Warning>
+
+## 故障排查
+
+### 容器啟動失敗
+
+```bash
+# 查看詳細日誌
+docker compose logs
+
+# 檢查端口佔用
+lsof -i :8000  # macOS/Linux
+netstat -ano | findstr :8000  # Windows
+
+# 刪除所有容器重新開始
+docker compose down
+docker compose up --build
+```
+
+### 頁面顯示 500 錯誤
+
+```bash
+# 檢查 Laravel 日誌
+docker compose exec app tail -f storage/logs/laravel.log
+
+# 檢查權限
+docker compose exec app ls -la storage/
+docker compose exec app chown -R www-data:www-data storage bootstrap/cache
+```
+
+### 資料庫連接失敗
+
+檢查 `.env` 檔案：
+- `DB_CONNECTION=sqlite`
+- `DB_DATABASE=/app/db-data/database.sqlite3`（容器內持久化路徑）
+- 確保 `db-data/database.sqlite3` 檔案存在且有讀寫權限
+
+### Composer 依賴安裝失敗
+
+```bash
+# 進入容器手動安裝
+docker compose exec app bash
+composer install --verbose
+```
+
+### 檔案權限問題
+
+如果遇到 `storage/` 或 `bootstrap/cache/` 權限錯誤：
+
+```bash
+docker compose exec app chown -R www-data:www-data storage bootstrap/cache
+docker compose exec app chmod -R 775 storage bootstrap/cache
+```
+
+## 生產部署注意事項
+
+<Warning>
+此 Docker 配置僅用於**開發環境**。生產環境需要：
+
+1. 使用生產優化的 Dockerfile（多階段構建、最小化鏡像）
+2. 配置 HTTPS
+3. 使用生產級資料庫（MySQL、PostgreSQL）
+4. 配置日誌收集
+5. 設置健康檢查
+6. 使用環境變量管理敏感信息
+7. 禁用調試模式（`APP_DEBUG=false`）
+</Warning>
+
+## 相關資源
+
+<CardGroup cols={2}>
+  <Card title="生產部署" icon="server" href="/dev/deployment">
+    生產環境部署指南
+  </Card>
+  
+  <Card title="SQLite 同步" icon="database" href="/dev/sqlite-sync">
+    自動化 SQLite 匯出與同步
+  </Card>
+  
+  <Card title="FrankenPHP 文檔" icon="book" href="https://frankenphp.dev/">
+    FrankenPHP 官方文檔
+  </Card>
+  
+  <Card title="Docker Compose 文檔" icon="docker" href="https://docs.docker.com/compose/">
+    Docker Compose 官方文檔
+  </Card>
+</CardGroup>

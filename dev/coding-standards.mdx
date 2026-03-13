@@ -1,0 +1,408 @@
+---
+title: 代碼風格規範
+description: PHP-CS-Fixer 配置、PSR-12 標準、same-line 大括號風格及代碼提交前必須執行的格式化命令
+---
+
+## 概述
+
+本專案使用 **PHP-CS-Fixer** 自動化代碼格式化工具，配置文件為 `.php-cs-fixer.dist.php`。所有代碼提交前**必須**運行格式化工具以確保風格一致性。
+
+<Note>
+**為什麼需要代碼格式化？**
+
+統一的代碼風格可以：
+- 提高代碼可讀性
+- 減少 Code Review 中的樣式爭議
+- 方便團隊協作
+- 降低 Git diff 噪音
+</Note>
+
+## 核心規範
+
+### 基礎標準：PSR-12
+
+本專案遵循 **PSR-12** 標準，並進行以下覆蓋調整。
+
+<Tip>
+**什麼是 PSR-12？**
+
+PSR-12 是 PHP-FIG（PHP Framework Interop Group）發布的代碼風格標準，擴展自 PSR-1 和 PSR-2，是 PHP 社區廣泛採用的代碼規範。
+</Tip>
+
+### 大括號位置（重要！）
+
+本專案覆蓋 PSR-12 的大括號換行要求，採用 **same-line** 風格：
+
+#### ✅ 函數和方法
+
+開括號與聲明在同一行：
+
+```php
+public function example() {
+    // code
+}
+
+private function calculateTotal($items) {
+    $total = 0;
+    foreach ($items as $item) {
+        $total += $item->price;
+    }
+    return $total;
+}
+```
+
+#### ✅ 類
+
+開括號與類名在同一行：
+
+```php
+class BiogMainController extends Controller {
+    // properties and methods
+}
+
+class UserRepository {
+    private $model;
+    
+    public function __construct(User $model) {
+        $this->model = $model;
+    }
+}
+```
+
+#### ✅ 控制結構
+
+開括號與條件/循環在同一行：
+
+```php
+if ($condition) {
+    // code
+}
+
+foreach ($items as $item) {
+    // process item
+}
+
+while ($hasMore) {
+    // continue processing
+}
+
+try {
+    // risky operation
+} catch (Exception $e) {
+    // handle error
+}
+```
+
+### 其他重要規範
+
+#### 陣列語法
+
+使用短陣列語法 `[]`，不使用 `array()`：
+
+```php
+// ✅ 正確
+$items = ['apple', 'banana', 'orange'];
+$config = [
+    'host' => 'localhost',
+    'port' => 3306,
+];
+
+// ❌ 錯誤
+$items = array('apple', 'banana', 'orange');
+```
+
+#### 導入排序
+
+`use` 語句按字母順序排列：
+
+```php
+// ✅ 正確（字母順序）
+use App\Http\Controllers\Controller;
+use App\Models\BiogMain;
+use App\Repositories\BiogMainRepository;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+// ❌ 錯誤（無序）
+use Illuminate\Http\Request;
+use App\Models\BiogMain;
+use App\Http\Controllers\Controller;
+```
+
+#### 多行陣列
+
+結尾必須有逗號（trailing comma）：
+
+```php
+// ✅ 正確
+$config = [
+    'host' => 'localhost',
+    'port' => 3306,
+    'database' => 'cbdb',  // 注意結尾逗號
+];
+
+// ❌ 錯誤（缺少 trailing comma）
+$config = [
+    'host' => 'localhost',
+    'port' => 3306,
+    'database' => 'cbdb'
+];
+```
+
+#### 返回類型聲明
+
+PHP 7.0+ 函數應使用返回類型聲明：
+
+```php
+// ✅ 正確
+public function store(Request $request): void {
+    // code
+}
+
+public function getUsers(): array {
+    return DB::table('users')->get()->toArray();
+}
+
+public function findById(int $id): ?User {
+    return User::find($id);
+}
+
+// ❌ 錯誤（缺少返回類型）
+public function store(Request $request) {
+    // code
+}
+```
+
+## 格式化命令
+
+### 格式化所有代碼
+
+<Warning>
+**提交前必須執行**
+
+在執行 `git commit` 之前，務必運行格式化命令確保代碼符合規範。
+</Warning>
+
+```bash
+./vendor/bin/php-cs-fixer fix
+```
+
+執行後，PHP-CS-Fixer 會自動修復所有不符合規範的代碼。
+
+### 預覽修改（不實際修改文件）
+
+如果你想先查看哪些文件會被修改，可以使用 dry-run 模式：
+
+```bash
+./vendor/bin/php-cs-fixer fix --dry-run --diff
+```
+
+- `--dry-run` - 不實際修改文件
+- `--diff` - 顯示具體的修改內容
+
+### 格式化特定文件
+
+```bash
+./vendor/bin/php-cs-fixer fix app/Http/Controllers/BiogMainController.php
+```
+
+## 覆蓋範圍
+
+PHP-CS-Fixer 會自動處理以下目錄的所有 `.php` 文件：
+
+<CardGroup cols={2}>
+  <Card title="app/" icon="folder">
+    應用程序邏輯（Controllers、Models、Repositories、Services 等）
+  </Card>
+  <Card title="config/" icon="gear">
+    配置文件（database.php、codes.php 等）
+  </Card>
+  <Card title="database/" icon="database">
+    數據庫遷移、填充和工廠文件
+  </Card>
+  <Card title="routes/" icon="route">
+    路由定義文件（web.php、api.php 等）
+  </Card>
+  <Card title="tests/" icon="flask">
+    測試文件（Feature 和 Unit 測試）
+  </Card>
+</CardGroup>
+
+<Note>
+**Blade 模板自動排除**
+
+Blade 模板文件（`*.blade.php`）會自動排除，不進行格式化。這是因為 Blade 語法與純 PHP 有差異，不適合用 PHP-CS-Fixer 處理。
+</Note>
+
+## 配置文件詳解
+
+項目的 PHP-CS-Fixer 配置位於 `.php-cs-fixer.dist.php`：
+
+```php .php-cs-fixer.dist.php
+<?php
+
+use PhpCsFixer\Config;
+use PhpCsFixer\Finder;
+use PhpCsFixer\Runner\Parallel\ParallelConfigFactory;
+
+$finder = Finder::create()
+    ->in([
+        __DIR__ . '/app',
+        __DIR__ . '/config',
+        __DIR__ . '/database',
+        __DIR__ . '/routes',
+        __DIR__ . '/tests',
+    ])
+    ->name('*.php')
+    ->notName('*.blade.php')  // 排除 Blade 模板
+    ->ignoreDotFiles(true)
+    ->ignoreVCS(true);
+
+return (new Config())
+    ->setParallelConfig(ParallelConfigFactory::detect())  // 啟用並行處理
+    ->setRules([
+        '@PSR12' => true,  // 基於 PSR-12
+        
+        // 覆蓋 PSR-12 的大括號換行要求
+        'braces_position' => [
+            'control_structures_opening_brace' => 'same_line',
+            'functions_opening_brace' => 'same_line',
+            'classes_opening_brace' => 'same_line',
+        ],
+        
+        'array_syntax' => ['syntax' => 'short'],  // 使用 [] 而非 array()
+        'ordered_imports' => ['sort_algorithm' => 'alpha'],  // 導入排序
+        'no_unused_imports' => true,  // 移除未使用的 use 語句
+        'trailing_comma_in_multiline' => ['elements' => ['arrays']],  // 多行陣列結尾逗號
+        
+        // 其他規則...
+    ])
+    ->setFinder($finder)
+    ->setUsingCache(true)  // 啟用緩存加速
+    ->setCacheFile(__DIR__ . '/.php-cs-fixer.cache');
+```
+
+## 文檔代碼範例規範
+
+在撰寫或更新文檔時，所有 PHP 代碼範例也應遵循項目的 **same-line** 大括號風格，確保文檔與實際代碼風格一致。
+
+這包括：
+- `AGENTS.md`、`DATABASE.md` 等核心文檔
+- `.claude/skills/` 目錄下的所有 skill 文件
+- `README.md` 和其他項目文檔
+
+```php
+// ✅ 文檔中的正確示例
+public function example() {
+    if ($condition) {
+        return $value;
+    }
+}
+
+// ❌ 文檔中的錯誤示例（不要使用 PSR-12 的換行風格）
+public function example()
+{
+    if ($condition)
+    {
+        return $value;
+    }
+}
+```
+
+## 提交前檢查清單
+
+在提交代碼到 Git 之前，請確保完成以下步驟：
+
+<Steps>
+  <Step title="運行代碼格式化">
+    ```bash
+    ./vendor/bin/php-cs-fixer fix
+    ```
+  </Step>
+  
+  <Step title="運行測試">
+    ```bash
+    ./vendor/bin/phpunit
+    ```
+    確保所有測試通過（綠燈）。
+  </Step>
+  
+  <Step title="編譯前端資源（如有修改）">
+    ```bash
+    npm run build
+    ```
+    如果修改了 Vue/JS/SCSS 文件，必須重新編譯。
+  </Step>
+  
+  <Step title="檢查 Git 變更">
+    ```bash
+    git diff
+    ```
+    確認只包含預期的改動。
+  </Step>
+  
+  <Step title="使用繁體中文撰寫 Commit Message">
+    所有 Git commit message 必須使用繁體中文敘述。
+  </Step>
+</Steps>
+
+<Tip>
+更多提交規範，請參考 [Commit Messages Skill](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/.claude/skills/commit-messages/SKILL.md)。
+</Tip>
+
+## 編輯器整合
+
+### Visual Studio Code
+
+安裝 PHP-CS-Fixer 擴展：
+
+1. 安裝 [php-cs-fixer extension](https://marketplace.visualstudio.com/items?itemName=junstyle.php-cs-fixer)
+2. 在 VSCode 設置中添加：
+
+```json settings.json
+{
+    "php-cs-fixer.executablePath": "${workspaceFolder}/vendor/bin/php-cs-fixer",
+    "php-cs-fixer.onsave": true,
+    "php-cs-fixer.config": ".php-cs-fixer.dist.php"
+}
+```
+
+保存文件時會自動格式化。
+
+### PhpStorm
+
+1. 打開 Settings → Tools → External Tools
+2. 添加新工具：
+   - Program: `$ProjectFileDir$/vendor/bin/php-cs-fixer`
+   - Arguments: `fix $FilePathRelativeToProjectRoot$`
+   - Working directory: `$ProjectFileDir$`
+
+## 常見問題
+
+<AccordionGroup>
+  <Accordion title="為什麼使用 same-line 而不是 PSR-12 的換行風格？">
+    Same-line 風格更加簡潔，減少代碼行數，同時保持可讀性。這是項目團隊的一致決策，所有代碼都遵循此風格。
+  </Accordion>
+  
+  <Accordion title="PHP-CS-Fixer 修改了我不想改的文件怎麼辦？">
+    如果某個文件需要特殊處理，可以在文件頂部添加：
+    
+    ```php
+    <?php
+    // php-cs-fixer:disable
+    ```
+    
+    但建議盡量避免這樣做，保持代碼風格統一。
+  </Accordion>
+  
+  <Accordion title="Blade 模板中的 PHP 代碼需要格式化嗎？">
+    Blade 模板（`*.blade.php`）已自動排除，不會被 PHP-CS-Fixer 處理。但建議手動保持 Blade 中的 PHP 代碼與項目風格一致。
+  </Accordion>
+</AccordionGroup>
+
+## 參考資料
+
+- [PSR-12 標準官方文檔](https://www.php-fig.org/psr/psr-12/)
+- [PHP-CS-Fixer GitHub](https://github.com/PHP-CS-Fixer/PHP-CS-Fixer)
+- [AGENTS.md - 代碼風格規範章節](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/AGENTS.md#代碼風格規範)
+- [Pre-commit Checks Skill](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/.claude/skills/pre-commit-checks.md)

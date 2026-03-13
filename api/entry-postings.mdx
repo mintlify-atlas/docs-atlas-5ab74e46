@@ -1,0 +1,333 @@
+---
+title: 'Entry Postings'
+description: 'Query people by entry path with place and time filtering'
+icon: 'graduation-cap'
+---
+
+## Query People by Entry Path
+
+Query people who entered service through specific entry paths, with support for place and time period filtering.
+
+### Endpoint
+
+```bash
+POST /api/query_entry_postings
+```
+
+<Note>
+This endpoint uses **POST** method with `Content-Type: application/json`.
+</Note>
+
+### Request Body Parameters
+
+<ParamField body="entry" type="array" required>
+  Array of entry path IDs to query
+</ParamField>
+
+<ParamField body="usePeoplePlace" type="number" default={0}>
+  Enable person-related place filtering:
+  - `1`: Enable
+  - `0`: Disable (ignores `peoplePlace` and `locationType`)
+</ParamField>
+
+<ParamField body="peoplePlace" type="array">
+  Array of person-related place IDs (only used if `usePeoplePlace=1`)
+</ParamField>
+
+<ParamField body="locationType" type="string">
+  Type of place to filter (only used if `usePeoplePlace=1`):
+  - `pAddr`: Only person's place
+  - `eAddr`: Only entry place
+  - `peAddr`: Both person's place and entry place
+</ParamField>
+
+<ParamField body="useDate" type="number" default={0}>
+  Enable date filtering:
+  - `1`: Enable
+  - `0`: Disable (ignores all date parameters)
+</ParamField>
+
+<ParamField body="dateType" type="string">
+  Date type (only used if `useDate=1`):
+  - `entry`: Entry year
+  - `index`: Index year
+  - `dynasty`: Dynasty
+</ParamField>
+
+<ParamField body="dateStartTime" type="number">
+  Start year (only used if `dateType=entry` or `dateType=index`)
+</ParamField>
+
+<ParamField body="dateEndTime" type="number">
+  End year (only used if `dateType=entry` or `dateType=index`)
+</ParamField>
+
+<ParamField body="dynStart" type="number">
+  Dynasty start code (only used if `dateType=dynasty`)
+</ParamField>
+
+<ParamField body="dynEnd" type="number">
+  Dynasty end code (only used if `dateType=dynasty`)
+</ParamField>
+
+<ParamField body="useXy" type="number" default={0}>
+  Include coordinate data:
+  - `1`: Include
+  - `0`: Exclude
+</ParamField>
+
+<ParamField body="start" type="number" default={1}>
+  Starting record number (1-based)
+</ParamField>
+
+<ParamField body="list" type="number" default={10}>
+  Number of records to return
+</ParamField>
+
+### Example Request
+
+<CodeGroup>
+```bash Query by entry year
+curl -X POST "https://input.cbdb.fas.harvard.edu/api/query_entry_postings" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entry": [36],
+    "usePeoplePlace": 0,
+    "peoplePlace": [],
+    "locationType": "peAddr",
+    "useDate": 1,
+    "dateType": "entry",
+    "dateStartTime": 1368,
+    "dateEndTime": 1644,
+    "dynStart": null,
+    "dynEnd": null,
+    "useXy": 1,
+    "start": 1,
+    "list": 10
+  }'
+```
+
+```bash Query by dynasty
+curl -X POST "https://input.cbdb.fas.harvard.edu/api/query_entry_postings" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entry": [36],
+    "usePeoplePlace": 0,
+    "peoplePlace": [],
+    "locationType": "peAddr",
+    "useDate": 1,
+    "dateType": "dynasty",
+    "dateStartTime": null,
+    "dateEndTime": null,
+    "dynStart": 17,
+    "dynEnd": 20,
+    "useXy": 1,
+    "start": 1,
+    "list": 10
+  }'
+```
+</CodeGroup>
+
+<Note>
+The first example queries people who became jinshi (進士) between 1368-1644.  
+The second example queries people who became jinshi during Jin Dynasty to Qing Dynasty (dynasties 17-20).
+</Note>
+
+### Response
+
+<ResponseField name="total" type="number">
+  Total number of records
+</ResponseField>
+
+<ResponseField name="start" type="number">
+  Starting record number of current data
+</ResponseField>
+
+<ResponseField name="end" type="number">
+  Ending record number of current data
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of entry posting records
+  
+  <Expandable title="Entry Posting Object Properties">
+    <ResponseField name="PersonID" type="number">
+      Person ID
+    </ResponseField>
+    
+    <ResponseField name="Name" type="string">
+      Person name in English
+    </ResponseField>
+    
+    <ResponseField name="NameChn" type="string">
+      Person name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="Sex" type="string">
+      Person gender (M/F)
+    </ResponseField>
+    
+    <ResponseField name="IndexYear" type="number">
+      Person's index year
+    </ResponseField>
+    
+    <ResponseField name="EntryDesc" type="string">
+      Entry path description in English
+    </ResponseField>
+    
+    <ResponseField name="EntryChn" type="string">
+      Entry path description in Chinese
+    </ResponseField>
+    
+    <ResponseField name="EntryYear" type="number">
+      Entry year
+    </ResponseField>
+    
+    <ResponseField name="EntryRank" type="number">
+      Examination rank (if applicable)
+    </ResponseField>
+    
+    <ResponseField name="KinType" type="string">
+      Kinship relationship type
+    </ResponseField>
+    
+    <ResponseField name="KinName" type="string">
+      Kinship relative name in English
+    </ResponseField>
+    
+    <ResponseField name="KinChn" type="string">
+      Kinship relative name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="Association" type="string">
+      Social association type
+    </ResponseField>
+    
+    <ResponseField name="AssocName" type="string">
+      Associate name in English
+    </ResponseField>
+    
+    <ResponseField name="AssocChn" type="string">
+      Associate name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="AddrID" type="number">
+      Person's place ID
+    </ResponseField>
+    
+    <ResponseField name="AddrType" type="string">
+      Place type in English
+    </ResponseField>
+    
+    <ResponseField name="AddrTypeChn" type="string">
+      Place type in Chinese
+    </ResponseField>
+    
+    <ResponseField name="AddrName" type="string">
+      Person's place name in English
+    </ResponseField>
+    
+    <ResponseField name="AddrChn" type="string">
+      Person's place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="X" type="number">
+      Longitude of person's place
+    </ResponseField>
+    
+    <ResponseField name="Y" type="number">
+      Latitude of person's place
+    </ResponseField>
+    
+    <ResponseField name="xy_count" type="number">
+      Number of people at the same place
+    </ResponseField>
+    
+    <ResponseField name="ParentState" type="string">
+      Parent status in English
+    </ResponseField>
+    
+    <ResponseField name="ParentStateChn" type="string">
+      Parent status in Chinese
+    </ResponseField>
+    
+    <ResponseField name="EntryPlace" type="string">
+      Entry place name in English
+    </ResponseField>
+    
+    <ResponseField name="EntryPlaceChn" type="string">
+      Entry place name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="EntryX" type="number">
+      Longitude of entry place
+    </ResponseField>
+    
+    <ResponseField name="EntryY" type="number">
+      Latitude of entry place
+    </ResponseField>
+    
+    <ResponseField name="dynasty" type="string">
+      Dynasty name in English
+    </ResponseField>
+    
+    <ResponseField name="dynastyChn" type="string">
+      Dynasty name in Chinese
+    </ResponseField>
+    
+    <ResponseField name="entry_xy_count" type="number">
+      Number of people at the same entry place
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Response
+
+```json
+{
+    "total": 100,
+    "start": 1,
+    "end": 10,
+    "data": [
+        {
+            "PersonID": 26219,
+            "Name": "Sheng Yingyang",
+            "NameChn": "盛應陽",
+            "Sex": "M",
+            "IndexYear": 1553,
+            "EntryDesc": "examination: jinshi (general)",
+            "EntryChn": "科舉: 進士(籠統)",
+            "EntryYear": 1526,
+            "EntryRank": 0,
+            "KinType": "U",
+            "KinName": "Wei Xiang",
+            "KinChn": "未詳",
+            "Association": "[Undefined]",
+            "AssocName": "Wei Xiang",
+            "AssocChn": "未詳",
+            "AddrType": "Basic Affiliation",
+            "AddrTypeChn": "籍貫（基本地址）",
+            "AddrName": "Wu Xian",
+            "AddrChn": "吳縣",
+            "X": 120.61862,
+            "Y": 31.31271,
+            "xy_count": 17,
+            "ParentState": "[Unknown]",
+            "ParentStateChn": "未詳",
+            "EntryPlace": "",
+            "EntryPlaceChn": "",
+            "EntryX": "",
+            "EntryY": "",
+            "entry_xy_count": ""
+        }
+    ]
+}
+```
+
+<Warning>
+**Important Notes:**
+
+- The `use*` parameters have higher priority than their corresponding data arrays
+- When `dateType=entry` or `dateType=index`, only `dateStartTime` and `dateEndTime` are used
+- When `dateType=dynasty`, only `dynStart` and `dynEnd` are used (other date fields are ignored)
+</Warning>

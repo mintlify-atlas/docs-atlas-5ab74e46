@@ -1,0 +1,486 @@
+---
+title: Database Migrations
+description: How Laravel migrations work in CBDB Online, baseline migration, creating new migrations, and MySQL/SQLite compatibility
+icon: code
+---
+
+## Overview
+
+CBDB Online uses Laravel migrations to manage database schema changes in a version-controlled, repeatable manner. All migrations must be compatible with both MySQL/MariaDB (production) and SQLite (testing).
+
+<Note>
+  **Critical Requirement**: All migrations must work on both MySQL/MariaDB and SQLite. This ensures tests run correctly and maintains deployment flexibility.
+</Note>
+
+## Baseline Migration
+
+The project's database schema was imported as a baseline migration in January 2025.
+
+<Card title="Baseline Migration" icon="database">
+  **File**: `database/migrations/2025_01_01_000000_import_cbdb_schema.php`
+  
+  **Contents**: Embedded `cbdb_schema.sql` with all original CBDB tables
+  
+  **Safety**: Only executes `CREATE TABLE IF NOT EXISTS` statements
+  
+  **Rollback**: No `down()` implementation (historical baseline)
+</Card>
+
+### How the Baseline Migration Works
+
+```php
+public function up(): void {
+    disable_foreign_keys();
+    
+    $statements = $this->extractCreateStatements($this->schemaSql());
+    
+    try {
+        foreach ($statements as $table => $statement) {
+            if (Schema::hasTable($table)) {
+                continue; // Skip existing tables
+            }
+            
+            if (is_sqlite()) {
+                $statement = $this->sanitizeForSqlite($statement);
+            }
+            
+            DB::statement($statement);
+        }
+    } finally {
+        enable_foreign_keys();
+    }
+}
+```
+
+<Tip>
+  The baseline migration automatically skips existing tables, making it safe to run on databases with pre-existing data.
+</Tip>
+
+## Existing Database Scenarios
+
+<Tabs>
+  <Tab title="Existing Database">
+    If the database already exists:
+    
+    ```bash
+    # Laravel will record the migration status
+    php artisan migrate
+    ```
+    
+    The migration automatically skips existing tables using `Schema::hasTable()`.
+  </Tab>
+  
+  <Tab title="New Database">
+    For a fresh database:
+    
+    ```bash
+    # Create the database with correct charset
+    mysql -u root -p -e "CREATE DATABASE cbdb 
+      CHARACTER SET utf8mb4 
+      COLLATE utf8mb4_general_ci;"
+    
+    # Run migrations to create all tables
+    php artisan migrate
+    ```
+  </Tab>
+</Tabs>
+
+## Creating New Migrations
+
+<Warning>
+  **Never modify the baseline migration file**. All schema changes must be made through new incremental migrations.
+</Warning>
+
+### Using Artisan Commands
+
+```bash
+# Create a new table migration
+php artisan make:migration create_example_table
+
+# Modify an existing table
+php artisan make:migration add_column_to_example_table --table=example
+
+# Check migration status
+php artisan migrate:status
+```
+
+### Migration Template (Laravel 10+)
+
+```php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration {
+    /**
+     * Run the migrations.
+     */
+    public function up(): void {
+        Schema::create('example', function (Blueprint $table) {
+            $table->bigIncrements('id');
+            $table->string('name', 255);
+            $table->timestamps();
+            
+            $table->index('name');
+        });
+    }
+    
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void {
+        Schema::dropIfExists('example');
+    }
+};
+```
+
+<Note>
+  Laravel 10+ uses anonymous class syntax: `return new class extends Migration`. Methods use return type declarations (`: void`).
+</Note>
+
+## MySQL/SQLite Compatibility
+
+### Why Compatibility Matters
+
+CBDB Online runs on different databases in different environments:
+
+<CardGroup cols={2}>
+  <Card title="Production" icon="server">
+    MariaDB 10.3.39
+    
+    Live data and operations
+  </Card>
+  
+  <Card title="Testing" icon="flask">
+    SQLite in-memory
+    
+    Fast, isolated test runs
+  </Card>
+  
+  <Card title="CI/CD" icon="robot">
+    SQLite in-memory
+    
+    Automated testing pipeline
+  </Card>
+  
+  <Card title="Development" icon="laptop-code">
+    MariaDB or MySQL
+    
+    Local development
+  </Card>
+</CardGroup>
+
+### Helper Functions
+
+The project provides standard helper functions in `database/migrations/helpers.php`:
+
+```php
+// ✅ Correct: Use helper functions
+if (is_mysql()) {
+    // MySQL/MariaDB specific operations
+}
+
+if (is_sqlite()) {
+    // SQLite specific operations
+}
+
+// ✅ Correct: Disable/enable foreign key checks
+disable_foreign_keys();
+try {
+    // Your operations
+} finally {
+    enable_foreign_keys();
+}
+
+// ❌ Wrong: Don't use DB::getDriverName() directly
+if (DB::getDriverName() === 'sqlite') {  // Don't do this!
+    // ...
+}
+```
+
+### Common Compatibility Issues
+
+<AccordionGroup>
+  <Accordion title="Issue 1: COMMENT Clauses (SQLite doesn't support)">
+    ```php
+    // ❌ Wrong: Direct COMMENT usage
+    DB::statement("
+        CREATE TABLE users (
+            id INT PRIMARY KEY COMMENT 'User ID'
+        )
+    ");
+    
+    // ✅ Correct: Conditionally remove COMMENT
+    public function up(): void {
+        $sql = "
+            CREATE TABLE users (
+                id INT PRIMARY KEY COMMENT 'User ID',
+                name VARCHAR(255) COMMENT 'User name'
+            )
+        ";
+        
+        if (is_sqlite()) {
+            $sql = preg_replace('/COMMENT\\s+\'[^\']*\'/i', '', $sql);
+        }
+        
+        DB::statement($sql);
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Issue 2: ENGINE and ROW_FORMAT (SQLite doesn't support)">
+    ```php
+    // ✅ Method 1: Conditional execution
+    public function up(): void {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+        });
+        
+        if (is_mysql()) {
+            DB::statement("ALTER TABLE users ENGINE=InnoDB ROW_FORMAT=DYNAMIC");
+        }
+    }
+    
+    // ✅ Method 2: Remove from SQL
+    public function up(): void {
+        $sql = "CREATE TABLE users (id INT) ENGINE=InnoDB ROW_FORMAT=DYNAMIC";
+        
+        if (is_sqlite()) {
+            $sql = preg_replace('/ENGINE\\s*=\\s*[a-zA-Z0-9_]+/i', '', $sql);
+            $sql = preg_replace('/ROW_FORMAT\\s*=\\s*[a-zA-Z0-9_]+/i', '', $sql);
+        }
+        
+        DB::statement($sql);
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Issue 3: Index Type Hints (USING BTREE)">
+    ```php
+    // ✅ Correct: Remove USING BTREE for SQLite
+    public function up(): void {
+        $sql = "
+            CREATE TABLE users (
+                id INT,
+                name VARCHAR(255),
+                KEY idx_name (name) USING BTREE
+            )
+        ";
+        
+        if (is_sqlite()) {
+            $sql = preg_replace('/USING\\s+BTREE/i', '', $sql);
+        }
+        
+        DB::statement($sql);
+    }
+    
+    // ✅ Better: Use Schema Builder (automatically compatible)
+    Schema::create('users', function (Blueprint $table) {
+        $table->id();
+        $table->string('name');
+        $table->index('name');  // Laravel handles compatibility
+    });
+    ```
+  </Accordion>
+  
+  <Accordion title="Issue 4: Foreign Key Constraint Checks">
+    ```php
+    // ✅ Correct: Use helper functions
+    public function up(): void {
+        disable_foreign_keys();
+        
+        try {
+            // Modify tables with foreign key constraints
+            Schema::table('posts', function (Blueprint $table) {
+                $table->dropForeign(['user_id']);
+                $table->unsignedBigInteger('user_id')->change();
+                $table->foreign('user_id')->references('id')->on('users');
+            });
+        } finally {
+            enable_foreign_keys();
+        }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+### Complete Compatibility Migration Template
+
+```php
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
+
+return new class extends Migration {
+    public function up(): void {
+        // Method 1: Use Schema Builder (Recommended)
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name', 255);
+            $table->string('email', 255)->unique();
+            $table->timestamps();
+            
+            $table->index('name');
+        });
+        
+        // MySQL-specific optimization (optional)
+        if (is_mysql()) {
+            DB::statement("ALTER TABLE users ENGINE=InnoDB ROW_FORMAT=DYNAMIC");
+        }
+        
+        // Method 2: Raw SQL with compatibility handling
+        $sql = "
+            CREATE TABLE logs (
+                id INT AUTO_INCREMENT PRIMARY KEY COMMENT 'Log ID',
+                message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                KEY idx_created (created_at) USING BTREE
+            ) ENGINE=InnoDB ROW_FORMAT=DYNAMIC
+        ";
+        
+        if (is_sqlite()) {
+            $sql = preg_replace('/COMMENT\\s+\'[^\']*\'/i', '', $sql);
+            $sql = preg_replace('/ENGINE\\s*=\\s*[a-zA-Z0-9_]+/i', '', $sql);
+            $sql = preg_replace('/ROW_FORMAT\\s*=\\s*[a-zA-Z0-9_]+/i', '', $sql);
+            $sql = preg_replace('/USING\\s+BTREE/i', '', $sql);
+        }
+        
+        DB::statement($sql);
+        
+        // Method 3: Handle foreign key constraints
+        disable_foreign_keys();
+        
+        try {
+            Schema::create('posts', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('user_id');
+                $table->foreign('user_id')
+                      ->references('id')
+                      ->on('users')
+                      ->onDelete('cascade');
+            });
+        } finally {
+            enable_foreign_keys();
+        }
+    }
+    
+    public function down(): void {
+        Schema::dropIfExists('posts');
+        Schema::dropIfExists('logs');
+        Schema::dropIfExists('users');
+    }
+};
+```
+
+## Testing Compatibility
+
+<Tabs>
+  <Tab title="PHPUnit Tests">
+    ```bash
+    # All tests use SQLite by default
+    vendor/bin/phpunit
+    ```
+  </Tab>
+  
+  <Tab title="Manual SQLite Test">
+    ```bash
+    # Fresh migration on SQLite
+    php artisan migrate:fresh --database=sqlite
+    
+    # Rollback test
+    php artisan migrate:rollback --database=sqlite
+    ```
+  </Tab>
+  
+  <Tab title="MySQL Test">
+    ```bash
+    # Test on MySQL/MariaDB
+    php artisan migrate:fresh
+    
+    php artisan migrate:rollback
+    ```
+  </Tab>
+</Tabs>
+
+## Pre-Commit Checklist
+
+Before committing a migration, verify:
+
+- [ ] Used `is_mysql()` and `is_sqlite()` instead of `DB::getDriverName()`?
+- [ ] Handled `COMMENT` clauses (SQLite doesn't support)?
+- [ ] Handled `ENGINE` and `ROW_FORMAT` (SQLite doesn't support)?
+- [ ] Handled `USING BTREE` index hints (SQLite doesn't support)?
+- [ ] Tested in SQLite environment (`php artisan migrate --database=sqlite`)?
+- [ ] All tests pass (`vendor/bin/phpunit`)?
+
+<Warning>
+  Migrations that fail on SQLite will break CI/CD and all automated tests. Always test on both databases.
+</Warning>
+
+## Common Migration Commands
+
+```bash
+# Run all pending migrations
+php artisan migrate
+
+# Rollback the last batch
+php artisan migrate:rollback
+
+# Rollback all migrations
+php artisan migrate:reset
+
+# Rollback and re-run all migrations
+php artisan migrate:refresh
+
+# Drop all tables and re-run migrations (DANGEROUS!)
+php artisan migrate:fresh
+
+# Check migration status
+php artisan migrate:status
+```
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Schema Builder" icon="check">
+    Laravel's Schema Builder automatically handles most compatibility issues
+  </Card>
+  
+  <Card title="Test on SQLite" icon="flask">
+    Always run migrations on SQLite before committing
+  </Card>
+  
+  <Card title="Use Helper Functions" icon="code">
+    Use `is_mysql()` and `is_sqlite()` from `helpers.php`
+  </Card>
+  
+  <Card title="Document Changes" icon="file-lines">
+    Add clear comments explaining complex migrations
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card 
+    title="Compatibility Guide" 
+    icon="check-double" 
+    href="/database/compatibility"
+  >
+    Deep dive into database compatibility principles
+  </Card>
+  
+  <Card 
+    title="Database Schema" 
+    icon="table" 
+    href="/database/schema"
+  >
+    Explore major tables and their structure
+  </Card>
+</CardGroup>

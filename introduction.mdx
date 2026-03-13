@@ -1,0 +1,98 @@
+---
+title: Introduction
+description: Overview of CBDB Online - China Biographical Database Project's collaborative data entry system
+---
+
+## What is CBDB Online?
+
+CBDB Online (中國歷代人物傳在線記錄入系統) is a collaborative web-based biographical data entry system for the China Biographical Database Project (CBDB). It enables researchers, scholars, and volunteers worldwide to contribute biographical information about historical Chinese figures spanning multiple dynasties.
+
+<Note>
+The system is hosted at [https://input.cbdb.fas.harvard.edu/](https://input.cbdb.fas.harvard.edu/) and is maintained by the CBDB Project team.
+</Note>
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Biographical Data Entry" icon="user">
+    Comprehensive forms for entering biographical information including names, addresses, kinship relations, social associations, offices held, and literary works.
+  </Card>
+  
+  <Card title="Multi-User Collaboration" icon="users">
+    Role-based access control with support for regular users, experts, crowdsourcing contributors, and administrators.
+  </Card>
+  
+  <Card title="Data Validation" icon="check-circle">
+    Built-in validation rules ensure data accuracy with support for code tables, dynasty periods, and standardized naming conventions.
+  </Card>
+  
+  <Card title="Approval Workflows" icon="clipboard-check">
+    Proposal and approval system for data contributions, ensuring quality control before final acceptance.
+  </Card>
+  
+  <Card title="Advanced Search" icon="magnifying-glass">
+    Multiple search interfaces including natural language to SQL conversion, entry type queries, and code table browsing.
+  </Card>
+  
+  <Card title="Public Data Export" icon="download">
+    Weekly automated exports to SQLite format, publicly available via HuggingFace datasets for research use.
+  </Card>
+</CardGroup>
+
+## Who Is It For?
+
+### Researchers and Scholars
+Academics studying Chinese history can directly contribute verified biographical data to the CBDB, ensuring their research findings are preserved and accessible to the global scholarly community.
+
+### Crowdsourcing Contributors
+Volunteers with knowledge of historical Chinese figures can participate in data entry, helping expand the database's coverage under expert supervision.
+
+### Database Administrators
+Project coordinators and data curators can manage user accounts, review proposals, maintain code tables, and monitor data quality through administrative interfaces.
+
+### Developers
+The system provides APIs for programmatic access to biographical data, supports MCP (Model Context Protocol) for read-only queries, and offers Prometheus metrics for monitoring.
+
+## Technical Foundation
+
+CBDB Online is built on modern web technologies:
+
+- **Backend**: Laravel 12.x framework running on PHP 8.2+ (PHP 8.4 recommended)
+- **Database**: MariaDB 10.3.39 with SQLite support for testing and exports
+- **Frontend**: AdminLTE 3 (Bootstrap 4) with Vue 3 components, built using Vite
+- **Web Server**: Caddy
+- **Authentication**: Laravel Sanctum for API token management
+
+## Data Scope
+
+The database covers:
+
+- **Biographical records** (BIOG_MAIN): Core person information including names, dynasties, life spans
+- **Addresses** (ADDR_CODES, BIOG_ADDR_DATA): Geographic locations and addresses associated with individuals
+- **Offices and Postings** (OFFICE_CODES, POSTING_DATA): Official positions and appointments
+- **Kinship Relations** (KIN_DATA): Family relationships and genealogical connections
+- **Social Associations** (ASSOC_DATA): Professional and social connections
+- **Literary Works** (TEXT_CODES, TEXT_INSTANCE_DATA): Authored texts and publications
+- **Code Tables**: Standardized reference data for dynasties, entry types, status codes, and more
+
+<Tip>
+All table schemas and relationships are documented in the [Database Schema Guide](/reference/database-schema) for developers who need to understand the underlying data structure.
+</Tip>
+
+## License
+
+The project is licensed under [CC BY-NC-SA 4.0 International](https://creativecommons.org/licenses/by-nc-sa/4.0/), allowing non-commercial sharing and adaptation with proper attribution.
+
+## Get Started
+
+Ready to begin? Choose your path:
+
+<CardGroup cols={2}>
+  <Card title="User Guide" icon="book-open" href="/quickstart">
+    Learn how to create your first biographical record
+  </Card>
+  
+  <Card title="Developer Setup" icon="code" href="/installation">
+    Set up a local development environment
+  </Card>
+</CardGroup>

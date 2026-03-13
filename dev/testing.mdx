@@ -1,0 +1,665 @@
+---
+title: Testing Guide
+description: PHPUnit testing strategy, best practices, and in-memory database testing for CBDB Online
+---
+
+## Testing Philosophy
+
+CBDB Online uses **PHPUnit 11.x** for automated testing. All tests use **in-memory SQLite** for fast, reliable execution without external database dependencies.
+
+<Note>
+  Tests run in complete isolation using SQLite's `:memory:` database, making them suitable for CI/CD pipelines.
+</Note>
+
+## Test Structure
+
+<CardGroup cols={2}>
+  <Card title="Feature Tests" icon="layer-group">
+    **Location:** `tests/Feature/`
+    
+    Full application tests including:
+    - HTTP requests and responses
+    - User authentication
+    - Database interactions
+    - Form submissions
+  </Card>
+  
+  <Card title="Unit Tests" icon="cube">
+    **Location:** `tests/Unit/`
+    
+    Isolated component tests:
+    - Repository methods
+    - Service classes
+    - Model logic
+    - Helper functions
+  </Card>
+</CardGroup>
+
+## Running Tests
+
+### Basic Commands
+
+```bash
+# Run all tests
+./vendor/bin/phpunit
+
+# Run specific test file
+./vendor/bin/phpunit tests/Feature/CodesControllerTest.php
+
+# Run specific test method
+./vendor/bin/phpunit --filter test_method_name
+
+# Run with verbose output
+./vendor/bin/phpunit --verbose
+
+# Stop on first failure
+./vendor/bin/phpunit --stop-on-failure
+```
+
+### Test Configuration
+
+**File:** `phpunit.xml`
+
+```xml
+<phpunit>
+  <php>
+    <env name="APP_ENV" value="testing"/>
+    <env name="DB_CONNECTION" value="sqlite"/>
+    <env name="DB_DATABASE" value=":memory:"/>
+    <env name="CACHE_DRIVER" value="array"/>
+    <env name="SESSION_DRIVER" value="array"/>
+    <env name="SKIP_CSRF_TOKEN" value="true"/>
+  </php>
+</phpunit>
+```
+
+<Tip>
+  CSRF middleware is automatically disabled in tests via `SKIP_CSRF_TOKEN=true`.
+</Tip>
+
+## In-Memory Database Testing (⭐ Recommended)
+
+This is the **standard approach** for testing in CBDB Online.
+
+### Why In-Memory SQLite?
+
+<CardGroup cols={2}>
+  <Card title="Fast" icon="bolt">
+    No disk I/O, tests complete in milliseconds
+  </Card>
+  
+  <Card title="Isolated" icon="lock">
+    Each test gets a fresh database
+  </Card>
+  
+  <Card title="CI-Friendly" icon="circle-check">
+    No external database setup needed
+  </Card>
+  
+  <Card title="Portable" icon="laptop">
+    Works on any developer machine
+  </Card>
+</CardGroup>
+
+### Basic Setup
+
+```php
+namespace Tests\Feature;
+
+use Tests\TestCase;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+
+class ExampleTest extends TestCase {
+    protected function setUp(): void {
+        parent::setUp();
+
+        // Configure SQLite in-memory database
+        config()->set('database.default', 'sqlite');
+        config()->set('database.connections.sqlite', [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+            'prefix' => '',
+        ]);
+
+        // Create test tables
+        $this->createTestTables();
+
+        // Seed test data
+        $this->seedTestData();
+    }
+
+    private function createTestTables(): void {
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('email')->unique();
+            $table->string('name');
+            $table->string('password');
+            $table->string('confirmation_token')->nullable();
+            $table->tinyInteger('is_active')->default(0);
+            $table->tinyInteger('is_admin')->default(0);
+            $table->timestamps();
+        });
+
+        // Add other tables as needed...
+    }
+
+    private function seedTestData(): void {
+        DB::table('users')->insert([
+            'email' => 'test@example.com',
+            'name' => 'Test User',
+            'password' => bcrypt('password'),
+            'is_active' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+}
+```
+
+<Warning>
+  **Do not use** `php artisan migrate` in tests. Create minimal table structures manually to avoid complex migration dependencies.
+</Warning>
+
+### Complete Example
+
+**File:** `tests/Feature/CodesControllerTest.php`
+
+```php
+namespace Tests\Feature;
+
+use Tests\TestCase;
+use App\Models\User;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+
+class CodesControllerTest extends TestCase {
+    protected function setUp(): void {
+        parent::setUp();
+
+        // In-memory database
+        config()->set('database.default', 'sqlite');
+        config()->set('database.connections.sqlite', [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+        ]);
+
+        // Create users table
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('email')->unique();
+            $table->string('name');
+            $table->string('password');
+            $table->string('confirmation_token')->nullable();
+            $table->tinyInteger('is_active')->default(1);
+            $table->tinyInteger('is_admin')->default(0);
+            $table->timestamps();
+        });
+
+        // Create test code table
+        Schema::create('STATUS_CODES', function (Blueprint $table) {
+            $table->integer('c_status_code')->primary();
+            $table->string('c_status_desc');
+        });
+
+        // Seed data
+        DB::table('STATUS_CODES')->insert([
+            ['c_status_code' => 1, 'c_status_desc' => 'Active'],
+            ['c_status_code' => 2, 'c_status_desc' => 'Inactive'],
+        ]);
+
+        // Configure codes whitelist
+        config()->set('codes.tables', ['STATUS_CODES' => 'Status Codes']);
+    }
+
+    public function test_guest_cannot_access_codes() {
+        $response = $this->get('/codes');
+        $response->assertRedirect('/login');
+    }
+
+    public function test_authenticated_user_can_view_codes_index() {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)->get('/codes');
+
+        $response->assertStatus(200);
+        $response->assertSee('Code Tables');
+    }
+
+    public function test_user_can_view_specific_code_table() {
+        $user = User::factory()->create();
+
+        $response = $this->actingAs($user)
+            ->get('/codes/STATUS_CODES');
+
+        $response->assertStatus(200);
+        $response->assertSee('Active');
+        $response->assertSee('Inactive');
+    }
+}
+```
+
+## Testing Best Practices
+
+### 1. Test Authorization
+
+Always test permission levels:
+
+```php
+public function test_guest_cannot_access_protected_page() {
+    $response = $this->get('/admin/dashboard');
+    $response->assertRedirect('/login');
+}
+
+public function test_regular_user_cannot_access_admin_page() {
+    $user = User::factory()->create(); // Regular user
+
+    $response = $this->actingAs($user)
+        ->get('/admin/dashboard');
+
+    $response->assertStatus(403);
+}
+
+public function test_admin_can_access_admin_page() {
+    $admin = User::factory()->active()->superAdmin()->create();
+
+    $response = $this->actingAs($admin)
+        ->get('/admin/dashboard');
+
+    $response->assertStatus(200);
+}
+```
+
+### 2. Test Database Side Effects
+
+```php
+public function test_creating_operation_stores_in_database() {
+    $admin = User::factory()->active()->superAdmin()->create();
+
+    $this->actingAs($admin)
+        ->post('/operations', [
+            'c_personid' => 12345,
+            'op_type' => 1,
+            'resource' => 'BIOG_MAIN',
+            'resource_data' => ['name' => 'Test'],
+        ]);
+
+    $this->assertDatabaseHas('operations', [
+        'c_personid' => 12345,
+        'op_type' => 1,
+        'resource' => 'BIOG_MAIN',
+    ]);
+}
+```
+
+### 3. Test Error Conditions
+
+```php
+public function test_restore_non_existent_operation_returns_404() {
+    $admin = User::factory()->active()->superAdmin()->create();
+
+    $response = $this->actingAs($admin)
+        ->post('/operations/restore/99999');
+
+    $response->assertStatus(404);
+}
+
+public function test_invalid_input_returns_validation_error() {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)
+        ->post('/basicinformation', [
+            // Missing required fields
+        ]);
+
+    $response->assertSessionHasErrors();
+}
+```
+
+### 4. Use Factories for Test Data
+
+**File:** `database/factories/UserFactory.php`
+
+```php
+namespace Database\Factories;
+
+use Illuminate\Database\Eloquent\Factories\Factory;
+
+class UserFactory extends Factory {
+    public function definition(): array {
+        return [
+            'name' => $this->faker->name(),
+            'email' => $this->faker->unique()->safeEmail(),
+            'password' => bcrypt('password'),
+            'confirmation_token' => null,
+            'is_active' => 0,
+            'is_admin' => 0,
+        ];
+    }
+
+    public function active(): static {
+        return $this->state(fn (array $attributes) => [
+            'is_active' => 1,
+        ]);
+    }
+
+    public function superAdmin(): static {
+        return $this->state(fn (array $attributes) => [
+            'is_active' => 1,
+            'is_admin' => 1,
+        ]);
+    }
+}
+```
+
+**Usage in tests:**
+
+```php
+// Create regular user
+$user = User::factory()->create();
+
+// Create active user
+$activeUser = User::factory()->active()->create();
+
+// Create super admin
+$admin = User::factory()->active()->superAdmin()->create();
+
+// Create with custom attributes
+$customUser = User::factory()->create([
+    'email' => 'custom@example.com',
+    'name' => 'Custom Name',
+]);
+```
+
+## Testing Repositories
+
+### Unit Test Example
+
+```php
+namespace Tests\Unit;
+
+use Tests\TestCase;
+use App\Repositories\OperationRepository;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Database\Schema\Blueprint;
+
+class OperationRepositoryTest extends TestCase {
+    private $repository;
+
+    protected function setUp(): void {
+        parent::setUp();
+
+        config()->set('database.default', 'sqlite');
+        config()->set('database.connections.sqlite', [
+            'driver' => 'sqlite',
+            'database' => ':memory:',
+        ]);
+
+        Schema::create('operations', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->unsignedInteger('c_personid');
+            $table->tinyInteger('op_type');
+            $table->string('resource');
+            $table->string('resource_id');
+            $table->text('resource_data');
+            $table->text('resource_original')->nullable();
+            $table->tinyInteger('crowdsourcing_status')->default(0);
+            $table->timestamps();
+        });
+
+        $this->repository = new OperationRepository();
+    }
+
+    public function test_store_creates_operation_record() {
+        $operation = $this->repository->store(
+            1,
+            12345,
+            1,
+            'BIOG_MAIN',
+            '12345',
+            ['name' => 'Test Person']
+        );
+
+        $this->assertDatabaseHas('operations', [
+            'user_id' => 1,
+            'c_personid' => 12345,
+            'op_type' => 1,
+        ]);
+
+        $this->assertEquals('BIOG_MAIN', $operation->resource);
+    }
+
+    public function test_store_encodes_resource_data_as_json() {
+        $data = ['name' => 'Test', 'value' => 123];
+
+        $operation = $this->repository->store(
+            1, 12345, 1, 'TEST_TABLE', 'id', $data
+        );
+
+        $decoded = json_decode($operation->resource_data, true);
+        $this->assertEquals($data, $decoded);
+    }
+}
+```
+
+## Common Testing Patterns
+
+### Testing with Authenticated User
+
+```php
+public function test_user_can_edit_own_data() {
+    $user = User::factory()->active()->create();
+
+    // Acting as authenticated user
+    $response = $this->actingAs($user)
+        ->get('/profile/edit');
+
+    $response->assertStatus(200);
+    $response->assertSee($user->name);
+}
+```
+
+### Testing AJAX Requests
+
+```php
+public function test_ajax_endpoint_returns_json() {
+    $user = User::factory()->active()->create();
+
+    $response = $this->actingAs($user)
+        ->postJson('/api/search', [
+            'query' => 'test',
+        ]);
+
+    $response->assertStatus(200);
+    $response->assertJson([
+        'success' => true,
+    ]);
+}
+```
+
+### Testing Form Submissions
+
+```php
+public function test_form_submission_creates_record() {
+    $user = User::factory()->active()->create();
+
+    $response = $this->actingAs($user)
+        ->post('/basicinformation', [
+            'c_name' => 'Test Person',
+            'c_dy' => 10,
+            // ... other fields
+        ]);
+
+    $response->assertRedirect();
+    $this->assertDatabaseHas('BIOG_MAIN', [
+        'c_name' => 'Test Person',
+    ]);
+}
+```
+
+## Common Pitfalls
+
+### ❌ Don't: Rely on Full Migrations
+
+```php
+// ❌ Wrong: Slow and brittle
+protected function setUp(): void {
+    parent::setUp();
+    $this->artisan('migrate');
+}
+```
+
+### ✅ Do: Create Minimal Tables
+
+```php
+// ✅ Correct: Fast and focused
+protected function setUp(): void {
+    parent::setUp();
+
+    Schema::create('users', function (Blueprint $table) {
+        $table->id();
+        $table->string('email');
+        // Only fields needed for this test
+    });
+}
+```
+
+### ❌ Don't: Forget nullable Fields
+
+```php
+// ❌ Wrong: Will cause "NOT NULL constraint failed" errors
+Schema::create('users', function (Blueprint $table) {
+    $table->string('confirmation_token'); // NOT NULL
+});
+```
+
+### ✅ Do: Mark Optional Fields as Nullable
+
+```php
+// ✅ Correct
+Schema::create('users', function (Blueprint $table) {
+    $table->string('confirmation_token')->nullable();
+});
+```
+
+### ❌ Don't: Forget Timestamps
+
+```php
+// ❌ Wrong: Eloquent expects created_at/updated_at
+Schema::create('operations', function (Blueprint $table) {
+    $table->id();
+    $table->string('resource');
+    // Missing timestamps
+});
+```
+
+### ✅ Do: Add Timestamps for Eloquent Models
+
+```php
+// ✅ Correct
+Schema::create('operations', function (Blueprint $table) {
+    $table->id();
+    $table->string('resource');
+    $table->timestamps();
+});
+```
+
+## PHPUnit 11 Compatibility
+
+This project uses **PHPUnit 11.x**. Key differences from older versions:
+
+### Updated Assertions
+
+```php
+// ✅ PHPUnit 11
+$this->assertStringContainsString('needle', $haystack);
+
+// ❌ Old version (deprecated)
+$this->assertContains('needle', $haystack);
+```
+
+### Common Assertions
+
+```php
+// HTTP Response
+$response->assertStatus(200);
+$response->assertRedirect('/login');
+$response->assertJson(['key' => 'value']);
+$response->assertSee('text');
+$response->assertDontSee('text');
+
+// Database
+$this->assertDatabaseHas('users', ['email' => 'test@example.com']);
+$this->assertDatabaseMissing('users', ['email' => 'deleted@example.com']);
+$this->assertDatabaseCount('users', 5);
+
+// General
+$this->assertTrue($condition);
+$this->assertFalse($condition);
+$this->assertEquals($expected, $actual);
+$this->assertNull($value);
+$this->assertNotNull($value);
+$this->assertInstanceOf(User::class, $object);
+$this->assertStringContainsString('substring', $string);
+```
+
+## Test Checklist
+
+When writing tests, ensure coverage of:
+
+- [ ] ✅ **Authorization**: Different user roles and permissions
+- [ ] ✅ **Normal flow**: Feature works as expected
+- [ ] ✅ **Error conditions**: Invalid input, missing data
+- [ ] ✅ **Side effects**: Database changes, events triggered
+- [ ] ✅ **Edge cases**: Empty values, boundary conditions
+- [ ] ✅ **Transactions**: Rollback on error
+
+## Continuous Integration
+
+Tests run automatically in CI/CD pipelines:
+
+```bash
+# CI command
+./vendor/bin/phpunit --stop-on-failure
+```
+
+<Note>
+  All tests must pass before code can be merged. Failed tests block deployment.
+</Note>
+
+## Reference Examples
+
+**Standard in-memory test patterns:**
+- `tests/Feature/WikiMaintenanceControllerTest.php`
+- `tests/Feature/UserIpLoggingTest.php`
+- `tests/Feature/CodesControllerTest.php`
+
+**Authorization testing:**
+- `tests/Feature/OperationsRestoreAuthorizeTest.php`
+
+**Repository testing:**
+- `tests/Unit/OperationRepositoryTest.php`
+- `tests/Unit/BiogMainRepositoryTest.php`
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Architecture" href="/dev/architecture" icon="sitemap">
+    System architecture overview
+  </Card>
+  
+  <Card title="Repository Pattern" href="/dev/repository-pattern" icon="box">
+    Testing repositories
+  </Card>
+  
+  <Card title="Tech Stack" href="/dev/tech-stack" icon="layer-group">
+    PHPUnit and testing tools
+  </Card>
+  
+  <Card title="GitHub Actions" href="https://github.com/cbdb-project/cbdb-online-main-server/actions" icon="github">
+    CI/CD pipeline status
+  </Card>
+</CardGroup>

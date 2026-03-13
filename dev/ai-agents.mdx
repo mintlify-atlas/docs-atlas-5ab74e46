@@ -1,0 +1,311 @@
+---
+title: AI Agents 開發指南
+description: AGENTS.md 文檔摘要，包含項目技術棧、代碼風格、Migration 規範、常用命令和 AI 代理專用 Skills
+---
+
+## 概述
+
+`AGENTS.md` 是 CBDB Online 項目的 **AI 代理開發指南**，彙整了 AI 代理（如 Claude、GitHub Copilot）在本專案工作時必備的背景知識、流程與測試指引。
+
+<Note>
+本頁面是 `AGENTS.md` 的精簡摘要，完整內容請參考 [GitHub 上的 AGENTS.md](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/AGENTS.md)。
+</Note>
+
+## 專案速覽
+
+### 技術棧
+
+<CardGroup cols={2}>
+  <Card title="後端框架" icon="php">
+    **Laravel 12.0** - PHP 8.2+（建議 8.4）
+  </Card>
+  <Card title="數據庫" icon="database">
+    **MariaDB 10.3.39** - 生產環境  
+    **SQLite** - 測試環境
+  </Card>
+  <Card title="前端框架" icon="palette">
+    **Vue 3** + **AdminLTE 3** (Bootstrap 4)
+  </Card>
+  <Card title="構建工具" icon="bolt">
+    **Vite** - 前端資源構建（已從 Laravel Mix 遷移）
+  </Card>
+</CardGroup>
+
+### 數據庫環境
+
+| 環境 | 數據庫 | 用途 |
+|------|--------|------|
+| **生產環境** | MariaDB 10.3.39 (Debian) | 主要業務數據 |
+| **測試環境** | SQLite | PHPUnit 測試、CI/CD |
+
+<Warning>
+**Migration 兼容性核心規範**
+
+所有 Migration **必須同時兼容 MySQL/MariaDB 和 SQLite**：
+
+- ✅ 使用 `is_mysql()` 和 `is_sqlite()` helper functions
+- ✅ 優先使用 Laravel Schema Builder（自動兼容）
+- ❌ 禁止直接使用 `DB::getDriverName()` 判斷數據庫類型
+- ❌ 避免使用數據庫專屬功能（ngram parser、MariaDB 插件）
+
+詳細指南：`.claude/skills/migration-guide.md`
+</Warning>
+
+### 內部輔助表
+
+帶 `CBDB__` 前綴的表為內部使用，不直接對終端用戶曝光：
+
+- **`CBDB__NAME_FTS`** - 姓名搜索倒排索引，支持高效後綴匹配查詢
+- **`CBDB__TRAD_SIMP_MAP`** - 繁簡字符映射及異體字標準化，基於 OpenCC 標準
+
+## 代碼風格規範
+
+### 核心規範：PSR-12 + Same-Line 大括號
+
+本專案遵循 **PSR-12** 標準，並覆蓋大括號換行要求：
+
+```php
+// ✅ 正確：函數/方法/類/控制結構開括號與聲明在同一行
+public function example() {
+    if ($condition) {
+        // code
+    }
+}
+
+class Example {
+    // code
+}
+
+foreach ($items as $item) {
+    // code
+}
+```
+
+### 其他重要規範
+
+- ✅ 陣列語法：使用 `[]` 而非 `array()`
+- ✅ 導入排序：`use` 語句按字母順序排列
+- ✅ 多行陣列：結尾必須有逗號
+- ✅ 返回類型聲明：PHP 7.0+ 函數應使用（如 `: void`、`: array`）
+
+### 格式化命令
+
+```bash
+# 提交前必須執行
+./vendor/bin/php-cs-fixer fix
+
+# 預覽修改（不實際修改文件）
+./vendor/bin/php-cs-fixer fix --dry-run --diff
+```
+
+配置文件：`.php-cs-fixer.dist.php`
+
+覆蓋範圍：`app/`、`config/`、`database/`、`routes/`、`tests/`（自動排除 `*.blade.php`）
+
+## 常用命令
+
+| 操作 | 指令 |
+|------|------|
+| 安裝 PHP 依賴 | `composer install` |
+| 安裝前端依賴 | `npm install` |
+| 編譯前端資源 | `npm run prod`（或 `npm run dev`）|
+| 執行完整測試 | `./vendor/bin/phpunit` |
+| 執行單一測試 | `./vendor/bin/phpunit --filter TestName` |
+| 代碼格式化 | `./vendor/bin/php-cs-fixer fix` |
+| 匯入繁簡映射 | `php artisan cbdb:import-trad-simp-map --truncate` |
+| 管理用戶 | `php artisan cbdb:manage-user` |
+
+<Note>
+若修改 Vue/JS，記得在本機跑 `npm run prod` 產出編譯文件；專案不會自動編譯。
+</Note>
+
+## AI 代理專用 Skills
+
+本專案在 `.claude/skills/` 目錄下提供了專門的技能指南，供 AI 代理在特定場景下參考使用。
+
+### 可用的 Skills
+
+<AccordionGroup>
+  <Accordion title="1. database-schema.md - 數據庫表格 Schema 查詢與維護">
+    **何時使用**：需要了解數據庫表格結構、字段類型、索引，或維護內部表格時。
+
+    **主要內容**：
+    - 從 `database/migrations/2025_01_01_*` 找到 baseline migration
+    - 使用 `grep` 搜索表格的後續修改
+    - 使用 `php artisan tinker` 驗證 schema 並查看示例數據
+    - 複合主鍵表格的特殊處理說明
+    - 內部輔助表（`CBDB__` 前綴）的識別和維護
+  </Accordion>
+
+  <Accordion title="2. pre-commit-checks.md - 代碼提交前檢查規範">
+    **何時使用**：在提交任何代碼變更到 Git 之前（必須執行）。
+
+    **必要檢查項目**：
+    - ✅ 代碼格式化：`./vendor/bin/php-cs-fixer fix`
+    - ✅ 測試驗證：`./vendor/bin/phpunit`（必須全部通過）
+    - ✅ 前端編譯：`npm run prod`（如修改了 Vue/JS/SCSS）
+    - ✅ 提交信息使用繁體中文
+  </Accordion>
+
+  <Accordion title="3. user-management.md - 用戶管理操作指南">
+    **何時使用**：需要創建、更新用戶帳號，或在測試中使用 User Factory 時。
+
+    **主要內容**：
+    - `php artisan cbdb:manage-user` 命令的交互式和命令行模式
+    - 支持的角色：`regular`、`expert`、`crowdsourcing`、`super-admin`
+    - User Factory 在測試中的使用方法
+  </Accordion>
+
+  <Accordion title="4. testing-guide.md - PHPUnit 測試編寫指南">
+    **何時使用**：編寫或運行測試時，了解項目的測試策略和最佳實踐。
+
+    **主要內容**：
+    - PHPUnit 基本原則和運行方法
+    - ⭐ In-Memory 數據庫測試模式（推薦標準做法）
+    - 避免複雜數據庫依賴的策略
+    - 測試編寫建議（授權、Side effect、例外情境）
+  </Accordion>
+
+  <Accordion title="5. migration-guide.md - Laravel Migration 編寫指南">
+    **何時使用**：需要創建或修改數據庫結構時。
+
+    **主要內容**：
+    - Migration 編寫核心原則（數據庫兼容性）
+    - 創建新表和修改現有表的完整模板
+    - 複合主鍵表的 Migration 處理
+    - 常用字段類型和索引策略
+    - 避免的模式（數據庫專屬功能）
+  </Accordion>
+
+  <Accordion title="6. commit-messages - 統一 commit message 撰寫規範">
+    **何時使用**：每次需要撰寫 commit message（包含提交、重寫、合併提交訊息）時。
+
+    **重點規範**：
+    - 一個 commit 對應一個邏輯變更
+    - 標題 60 字內、繁體中文、命令語氣
+    - 內文條列說明「做了什麼 / 為什麼」
+  </Accordion>
+</AccordionGroup>
+
+## 迭代流程與守則
+
+<Steps>
+  <Step title="變更前檢查">
+    檢查 `git status`，確認工作樹是否乾淨；若不乾淨，先理解現存修改，避免誤刪。
+  </Step>
+
+  <Step title="實作順序建議">
+    1. 閱讀相關 Controller/Repository/Blade 了解資料流
+    2. 補齊或更新測試（先寫測試再改程式碼可降低回歸）
+    3. 實作功能後重新跑受影響的測試
+  </Step>
+
+  <Step title="提交前檢查">
+    - `git diff` 確認只包含預期改動
+    - `./vendor/bin/phpunit` 測試需為綠燈
+    - 若改了前端資源，記得提交編譯後檔案
+  </Step>
+
+  <Step title="開發注意事項">
+    - 嚴禁在未授權情況下直接修改資料庫結構或大量資料
+    - 避免在 Controller 中直接寫 SQL；優先利用 Repository
+    - **單一主鍵**的表可用 Eloquent 模型，**複合主鍵**的表必須使用 Query Builder (`DB::table()`)
+    - 所有新路由需通過授權檢查
+    - 請勿引入外部 CDN 的 jQuery/Bootstrap，使用 Vite bundle
+  </Step>
+</Steps>
+
+### 編寫 Migration 時的必要檢查
+
+- ✅ 使用 `is_mysql()` 和 `is_sqlite()` 而非 `DB::getDriverName()`
+- ✅ 優先使用 Laravel Schema Builder（自動兼容）
+- ✅ 需要原始 SQL 時，使用 `is_sqlite()` 移除不支持的語法（COMMENT、ENGINE、USING BTREE 等）
+- ✅ 使用 SQLite 連線執行 Migration 測試：`php artisan migrate:fresh --database=sqlite`
+- ✅ 參考 `.claude/skills/migration-guide.md` 的兼容性章節
+
+## 常見坑位
+
+<AccordionGroup>
+  <Accordion title="測試數據庫依賴陷阱">
+    避免依賴完整 MySQL schema 或複雜遷移文件，這會導致 CI 失敗和測試不穩定。
+  </Accordion>
+
+  <Accordion title="PHPUnit 版本兼容性">
+    本專案使用 PHPUnit 11.x，撰寫測試時請依 11.x 的 API 撰寫，使用相容的斷言方法（如 `assertStringContainsString` 取代舊版的 `assertContains`）。
+  </Accordion>
+
+  <Accordion title="Migration 數據庫兼容性陷阱">
+    - ❌ 錯誤：使用 `DB::getDriverName() === 'sqlite'`
+    - ✅ 正確：使用 `is_sqlite()` 和 `is_mysql()` helper functions
+    - ❌ 錯誤：直接使用 COMMENT、ENGINE、USING BTREE 等 MySQL 專屬語法
+    - ✅ 正確：使用 `is_sqlite()` 條件移除不支持的語法，或使用 Schema Builder
+  </Accordion>
+
+  <Accordion title="Eloquent 與複合主鍵的限制">
+    Laravel Eloquent ORM **官方不支持**複合主鍵。對於複合主鍵的表（如 `ALTNAME_DATA`），直接使用 Query Builder (`DB::table()`) 而非建立 Eloquent 模型。
+
+    使用 Query Builder 的優勢：
+    - 官方完整支援，無需依賴第三方套件
+    - 程式碼更明確，易於理解和維護
+    - 避免 Eloquent 在複合主鍵下的各種問題
+  </Accordion>
+
+  <Accordion title="HTTPS 混合內容問題">
+    在 Blade 模板中使用 `route()` 函數時，預設會產生絕對 URL。當透過 HTTPS 提供服務時，會導致混合內容錯誤。
+
+    **解決方案**：使用 `route()` 的第三個參數設為 `false` 生成相對 URL：
+    
+    ```php
+    // ✅ 正確：會生成 /query-playground/run
+    url: "{{ route('query-playground.run', [], false) }}"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## 核心功能備忘
+
+### 代碼表頁面
+
+- `/codes/{table}` - 泛用代碼表頁面
+- `CodesController` 根據表名直接查資料庫
+- 白名單配置於 `config/codes.php`
+- 內部表（`CBDB__` 前綴）為只讀模式
+
+### 操作紀錄
+
+- 透過 `OperationRepository::store()` 統一寫入
+- 欄位 `op_type` 代表新增/覆寫/修改/刪除
+- 任官相關操作已改成由 `BiogMainRepository` 以資料庫交易處理
+
+### 操作復原
+
+- 僅活躍管理員可觸發 `OperationsController::restore()`
+- 還原成功後，系統會新增一筆 `op_type = 3` 記錄
+- UI 按鈕文字為「復原」
+
+## 文檔更新建議
+
+- 有 UI/流程重大調整時，同步更新 `README.md` 與 `CHANGELOG.md`
+- 若整理出新知識或踩坑，補充至 `AGENTS.md`
+- 重要設定建議集中在專用文件維護
+
+## 提交規範
+
+所有 Git commit message **必須使用繁體中文**敘述。使用者介面也使用繁體中文。
+
+## 參考資料
+
+<CardGroup cols={2}>
+  <Card title="AGENTS.md" icon="robot" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/main/AGENTS.md">
+    完整的 AI 代理開發指南
+  </Card>
+  <Card title="Skills 目錄" icon="folder" href="https://github.com/cbdb-project/cbdb-online-main-server/tree/main/.claude/skills">
+    所有 AI 代理專用技能指南
+  </Card>
+  <Card title="README.md" icon="book" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/main/README.md">
+    項目主文檔
+  </Card>
+  <Card title="DATABASE.md" icon="database" href="https://github.com/cbdb-project/cbdb-online-main-server/blob/main/DATABASE.md">
+    數據庫完整指南
+  </Card>
+</CardGroup>

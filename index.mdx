@@ -1,97 +1,189 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "CBDB Online Documentation"
+description: "China Biographical Database online data entry and management system for historical Chinese biographical records"
 ---
 
-## Setting up
+<div style={{
+  background: "linear-gradient(135deg, #590b0b 0%, #a2747c 100%)",
+  padding: "3rem 2rem",
+  borderRadius: "4px",
+  marginBottom: "2rem",
+  color: "white"
+}}>
+  <h1 style={{ fontSize: "48px", fontWeight: "700", marginBottom: "1rem", color: "white" }}>
+    CBDB Online
+  </h1>
+  <p style={{ fontSize: "20px", opacity: "0.95", maxWidth: "800px", color: "white" }}>
+    A comprehensive data entry and management system for the China Biographical Database (CBDB), 
+    enabling researchers to record and explore historical Chinese biographical records, office postings, 
+    kinship networks, and social relationships.
+  </p>
+</div>
 
-Get your documentation site up and running in minutes.
+## Get Started
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+Begin working with CBDB Online in minutes.
 
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
+<CardGroup cols={2}>
   <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
+    title="Introduction"
+    icon="book-open"
+    href="/introduction"
   >
-    Edit your docs locally and preview them in real time.
+    Learn about CBDB Online and its capabilities
   </Card>
   <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
+    title="Quickstart Guide"
+    icon="rocket"
+    href="/quickstart"
   >
-    Customize the design and colors of your site to match your brand.
-  </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+    Get up and running with your first biographical record
   </Card>
   <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
+    title="Installation"
+    icon="download"
+    href="/installation"
   >
-    Auto-generate API documentation from OpenAPI specifications.
-  </Card>
-</Columns>
-
-## Create beautiful pages
-
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+    Set up CBDB Online in your environment
   </Card>
   <Card
-    title="Code samples"
+    title="User Roles"
+    icon="users"
+    href="/concepts/user-roles"
+  >
+    Understand permission levels and access control
+  </Card>
+</CardGroup>
+
+## Core Features
+
+Explore the key capabilities of CBDB Online.
+
+<CardGroup cols={3}>
+  <Card
+    title="Biographical Records"
+    icon="user"
+    href="/guides/managing-biographies"
+  >
+    Create and manage historical person records with detailed biographical information
+  </Card>
+  <Card
+    title="Office Postings"
+    icon="briefcase"
+    href="/guides/office-postings"
+  >
+    Track career paths and government positions throughout Chinese history
+  </Card>
+  <Card
+    title="Kinship Relations"
+    icon="family"
+    href="/guides/kinship-relations"
+  >
+    Document family relationships and genealogical networks
+  </Card>
+  <Card
+    title="Social Associations"
+    icon="network-wired"
+    href="/guides/social-associations"
+  >
+    Record teacher-student, colleague, and other social relationships
+  </Card>
+  <Card
+    title="Code Tables"
+    icon="table"
+    href="/guides/code-tables"
+  >
+    Manage standardized codes for offices, places, dynasties, and entry paths
+  </Card>
+  <Card
+    title="Search & Query"
+    icon="magnifying-glass"
+    href="/guides/search"
+  >
+    Find people, places, and relationships with powerful search tools
+  </Card>
+</CardGroup>
+
+## API Access
+
+Integrate CBDB data into your applications.
+
+<CardGroup cols={2}>
+  <Card
+    title="API Overview"
     icon="code"
-    href="/essentials/code"
+    href="/api/overview"
   >
-    Add sample code to demonstrate how to use your product.
+    Learn about the CBDB REST API and available endpoints
   </Card>
   <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
+    title="Query Office Postings"
+    icon="search"
+    href="/api/office-postings"
   >
-    Display images and other media.
+    Search for historical office appointments and career records
   </Card>
   <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
+    title="Query Social Networks"
+    icon="diagram-project"
+    href="/api/associations"
   >
-    Write once and reuse across your docs.
+    Explore social relationships and association networks
   </Card>
-</Columns>
+  <Card
+    title="Authentication"
+    icon="key"
+    href="/api/authentication"
+  >
+    Secure API access with proper authentication
+  </Card>
+</CardGroup>
 
-## Need inspiration?
+## For Developers
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+Build, extend, and deploy CBDB Online.
+
+<CardGroup cols={3}>
+  <Card
+    title="Architecture"
+    icon="sitemap"
+    href="/dev/architecture"
+  >
+    Understand the system design and technical stack
+  </Card>
+  <Card
+    title="Development Setup"
+    icon="laptop-code"
+    href="/dev/setup"
+  >
+    Configure your local development environment
+  </Card>
+  <Card
+    title="Database Schema"
+    icon="database"
+    href="/database/schema"
+  >
+    Explore the database structure and relationships
+  </Card>
+  <Card
+    title="Testing"
+    icon="flask"
+    href="/dev/testing"
+  >
+    Write and run tests for CBDB Online
+  </Card>
+  <Card
+    title="Docker Deployment"
+    icon="docker"
+    href="/dev/docker"
+  >
+    Deploy using Docker containers
+  </Card>
+  <Card
+    title="SQLite Export"
+    icon="file-export"
+    href="/dev/sqlite-sync"
+  >
+    Automate weekly SQLite dataset exports
+  </Card>
+</CardGroup>

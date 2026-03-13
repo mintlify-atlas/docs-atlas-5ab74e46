@@ -1,0 +1,348 @@
+---
+title: "Mutation API"
+description: "Web-based API for creating and updating CBDB data"
+icon: "pen-to-square"
+---
+
+## Overview
+
+The Mutation API (`/api/v2/mutate`) provides a web-based interface for creating and updating CBDB data. This endpoint is designed for use by the CBDB Online frontend and requires authentication.
+
+<Warning>
+This endpoint requires an authenticated user session or personal access token. See [Authentication](/api/authentication) for details.
+</Warning>
+
+## Endpoint
+
+```
+POST /api/v2/mutate
+```
+
+**Authentication**: Required (Session or Personal Access Token)
+
+**Content-Type**: `application/json`
+
+## Request Format
+
+The mutation API accepts a JSON payload with the following structure:
+
+```json Request structure
+{
+  "resource": "altnames",
+  "mode": "direct",
+  "operation": "update",
+  "person_id": 12345,
+  "target": {
+    "pk": {
+      "c_personid": 12345,
+      "c_sequence": 1,
+      "c_alt_name_chn": "字子厚",
+      "c_alt_name_type_code": 2
+    }
+  },
+  "changes": {
+    "c_alt_name": "Zi Zihou"
+  },
+  "meta": {}
+}
+```
+
+### Request Fields
+
+<ParamField path="resource" type="string" required>
+  Resource type being modified:
+  - `altnames`: Alternative names (ALTNAME_DATA)
+  - `possession`/`possessions`: Literary works (TEXT_DATA)
+</ParamField>
+
+<ParamField path="mode" type="string" required>
+  Operation mode:
+  - `direct`: Direct modification (requires expert/admin privileges)
+  - `proposal`: Create proposal for review (not yet implemented)
+</ParamField>
+
+<ParamField path="operation" type="string" required>
+  Type of operation:
+  - `update`: Update existing record
+  - `create`: Create new record (not yet implemented)
+  - `delete`: Delete record (not yet implemented)
+</ParamField>
+
+<ParamField path="person_id" type="integer" required>
+  The person ID (`c_personid`) this resource belongs to.
+</ParamField>
+
+<ParamField path="target.pk" type="object" required>
+  Composite primary key identifying the exact record to modify. Structure varies by resource type.
+</ParamField>
+
+<ParamField path="changes" type="object" required>
+  Fields to update with their new values. Cannot be empty.
+</ParamField>
+
+<ParamField path="meta" type="object">
+  Additional metadata (optional, reserved for future use).
+</ParamField>
+
+## Supported Resources
+
+### Alternative Names (altnames)
+
+**Resource**: `altnames`
+
+**Table**: `ALTNAME_DATA`
+
+**Composite Primary Key**:
+```json
+{
+  "c_personid": 12345,
+  "c_sequence": 1,
+  "c_alt_name_chn": "字子厚",
+  "c_alt_name_type_code": 2
+}
+```
+
+**Updatable Fields**:
+- `c_alt_name`: Romanized alternative name
+- `c_alt_name_chn`: Chinese alternative name
+- `c_alt_name_type_code`: Name type code
+- `c_sequence`: Sequence number
+
+**Example Request**:
+
+```bash Update altname
+curl -X POST https://input.cbdb.fas.harvard.edu/api/v2/mutate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "resource": "altnames",
+    "mode": "direct",
+    "operation": "update",
+    "person_id": 12345,
+    "target": {
+      "pk": {
+        "c_personid": 12345,
+        "c_sequence": 1,
+        "c_alt_name_chn": "字子厚",
+        "c_alt_name_type_code": 2
+      }
+    },
+    "changes": {
+      "c_alt_name": "Zi Zihou (updated)"
+    }
+  }'
+```
+
+### Literary Works (possession)
+
+**Resource**: `possession` or `possessions`
+
+**Table**: `TEXT_DATA`
+
+**Composite Primary Key**:
+```json
+{
+  "c_personid": 12345,
+  "c_text_id": 67890
+}
+```
+
+**Updatable Fields**:
+- `c_title_chn`: Chinese title
+- `c_title`: Romanized title
+- `c_pages`: Number of pages
+- `c_notes`: Notes
+
+**Example Request**:
+
+```bash Update text
+curl -X POST https://input.cbdb.fas.harvard.edu/api/v2/mutate \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN" \
+  -d '{
+    "resource": "possession",
+    "mode": "direct",
+    "operation": "update",
+    "person_id": 12345,
+    "target": {
+      "pk": {
+        "c_personid": 12345,
+        "c_text_id": 67890
+      }
+    },
+    "changes": {
+      "c_pages": 250
+    }
+  }'
+```
+
+## Response Format
+
+### Success Response
+
+```json Success (200 OK)
+{
+  "success": true,
+  "message": "更新成功",
+  "data": {
+    "c_personid": 12345,
+    "c_sequence": 1,
+    "c_alt_name_chn": "字子厚",
+    "c_alt_name": "Zi Zihou (updated)",
+    "c_alt_name_type_code": 2
+  }
+}
+```
+
+### Error Responses
+
+<ResponseField name="success" type="boolean">
+  Always `false` for errors.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Human-readable error message (in Chinese).
+</ResponseField>
+
+<ResponseField name="errors" type="object">
+  Validation errors keyed by field name.
+</ResponseField>
+
+**Examples**:
+
+```json Missing required field (422)
+{
+  "success": false,
+  "message": "缺少 person_id",
+  "errors": {
+    "person_id": ["required"]
+  }
+}
+```
+
+```json Unauthorized (401)
+{
+  "success": false,
+  "message": "Unauthenticated."
+}
+```
+
+```json Insufficient privileges (403)
+{
+  "success": false,
+  "message": "該使用者沒有權限，請聯繫管理員"
+}
+```
+
+```json Invalid primary key (422)
+{
+  "success": false,
+  "message": "主鍵格式不正確",
+  "errors": {
+    "pk": ["c_personid is required"]
+  }
+}
+```
+
+```json Record not found (404)
+{
+  "success": false,
+  "message": "ALTNAME_DATA 記錄不存在"
+}
+```
+
+## Permissions
+
+The mutation API requires appropriate user permissions:
+
+| Mode | Required Role |
+|------|---------------|
+| Direct modification | Expert (1) or Super Admin (3) |
+| Proposal creation | Any active user (not yet implemented) |
+
+**Permission checks**:
+1. User must be authenticated
+2. User must be active (`is_active == 1`)
+3. For `mode: "direct"`, user must have `canWriteDirectly()` privilege
+
+<Note>
+Regular users and crowdsourcing contributors cannot use `mode: "direct"`. The `mode: "proposal"` feature is planned for future implementation.
+</Note>
+
+## Validation
+
+The API performs several validation checks:
+
+<Steps>
+  <Step title="Primary key validation">
+    Uses `CompositePrimaryKey::validateOrFail()` to ensure all required primary key fields are present and valid.
+  </Step>
+  <Step title="Person ID consistency">
+    Verifies `person_id` matches `target.pk.c_personid`.
+  </Step>
+  <Step title="Record existence">
+    Checks that the target record exists before attempting update.
+  </Step>
+  <Step title="Changes validation">
+    Ensures `changes` object is not empty.
+  </Step>
+</Steps>
+
+## Implementation Example
+
+Controller method handling altname updates:
+
+```php MutationController.php
+protected function handleAltnameDirectUpdate(
+    int $personId,
+    array $targetPk,
+    array $changes,
+    array $meta = []
+): JsonResponse {
+    // Validate primary key
+    CompositePrimaryKey::validateOrFail($targetPk, 'ALTNAME_DATA');
+    
+    // Fetch original record
+    $original = $this->biogMainRepository->altnameById($targetPk);
+    if (!$original) {
+        return $this->errorResponse('ALTNAME_DATA 記錄不存在', 404);
+    }
+    
+    // Update record using repository
+    $updated = $this->biogMainRepository->altnameUpdateById($targetPk, $changes);
+    
+    // Update name search index if name changed
+    if (isset($changes['c_alt_name_chn']) || isset($changes['c_alt_name'])) {
+        $this->nameSearchIndexService->updatePerson($personId);
+    }
+    
+    return $this->successResponse($updated, '更新成功');
+}
+```
+
+## Future Enhancements
+
+Planned features not yet implemented:
+
+- **Proposal mode**: Create proposals for review instead of direct modification
+- **Create operation**: Add new records via API
+- **Delete operation**: Remove records via API
+- **Batch operations**: Update multiple records in single request
+- **Additional resources**: Support for more table types
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="key" href="/api/authentication">
+    Learn how to authenticate API requests
+  </Card>
+  <Card title="User Roles" icon="users" href="/concepts/user-roles">
+    Understand permission levels
+  </Card>
+  <Card title="Composite Primary Keys" icon="key-skeleton" href="/concepts/data-model">
+    Learn about composite key tables
+  </Card>
+  <Card title="Operations Audit" icon="list-check" href="/concepts/operations-audit">
+    Track changes via operation log
+  </Card>
+</CardGroup>

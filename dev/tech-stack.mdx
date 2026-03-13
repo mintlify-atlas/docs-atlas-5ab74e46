@@ -1,0 +1,400 @@
+---
+title: Technology Stack
+description: Complete technology stack for CBDB Online including versions and dependencies
+---
+
+## Production Environment
+
+### Backend
+
+<CardGroup cols={2}>
+  <Card title="PHP 8.2+" icon="php">
+    **Minimum:** 8.2.0  
+    **Recommended:** 8.4
+    
+    PHP 8.4 provides best performance and security. Laravel 12 fully supports PHP 8.4.
+  </Card>
+  
+  <Card title="Laravel 12.x" icon="laravel">
+    **Current:** 12.0
+    
+    Upgraded from Laravel 11. See [UPGRADE.md](https://github.com/cbdb-project/cbdb-online-main-server/blob/main/docs/UPGRADE.md) for migration details.
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="MariaDB 10.3.39" icon="database">
+    **Platform:** Debian
+    
+    Production database. Schema must remain compatible with standard MySQL/MariaDB features.
+  </Card>
+  
+  <Card title="Caddy Web Server" icon="server">
+    Modern web server with automatic HTTPS
+  </Card>
+</CardGroup>
+
+### Frontend
+
+<CardGroup cols={3}>
+  <Card title="AdminLTE 3" icon="grid">
+    Bootstrap 4 admin theme
+  </Card>
+  
+  <Card title="Bootstrap 4" icon="bootstrap">
+    CSS framework
+  </Card>
+  
+  <Card title="Vue 3" icon="vuejs">
+    Progressive JavaScript framework
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="Vite" icon="bolt">
+    **Version:** ^7.2.4
+    
+    Modern frontend build tool (replaces Laravel Mix/webpack)
+  </Card>
+  
+  <Card title="Node.js 22.x" icon="node-js">
+    **npm:** 10.x
+    
+    Required for frontend asset compilation
+  </Card>
+</CardGroup>
+
+## Testing Environment
+
+<Card title="SQLite (in-memory)" icon="flask">
+  **Version:** Latest compatible with PHP 8.2+
+  
+  Used for PHPUnit tests and CI/CD. All migrations must be compatible with both MySQL/MariaDB and SQLite.
+</Card>
+
+<Card title="PHPUnit 11.x" icon="vial">
+  **Configured in:** `phpunit.xml`
+  
+  - Uses in-memory SQLite database (`:memory:`)
+  - CSRF middleware disabled for testing (`SKIP_CSRF_TOKEN=true`)
+  - Isolated test environment
+</Card>
+
+## PHP Dependencies (composer.json)
+
+### Core Framework
+
+```json
+"require": {
+    "php": "^8.2",
+    "laravel/framework": "^12.0",
+    "laravel/sanctum": "^4.0",
+    "laravel/tinker": "^2.8",
+    "laravel/ui": "^4.5"
+}
+```
+
+<Tip>
+  Laravel 12 requires PHP 8.2+ and provides improved performance, better type safety, and enhanced developer experience.
+</Tip>
+
+### Key Libraries
+
+| Package | Version | Purpose |
+|---------|---------|----------|
+| `guzzlehttp/guzzle` | ^7.2 | HTTP client |
+| `nesbot/carbon` | ^3.0 | Date/time handling (GMT+8 timezone) |
+| `laracasts/flash` | ^3.0 | Flash message system |
+| `laravel/mcp` | ^0.5.7 | Model Context Protocol integration |
+| `phpmyadmin/sql-parser` | ^6.0 | SQL parsing and analysis |
+| `promphp/prometheus_client_php` | ^2.14 | Prometheus metrics |
+
+### Development Dependencies
+
+```json
+"require-dev": {
+    "phpunit/phpunit": "^11.0",
+    "mockery/mockery": "^1.4.4",
+    "fakerphp/faker": "^1.24",
+    "friendsofphp/php-cs-fixer": "^3.0",
+    "nunomaduro/collision": "^8.0",
+    "spatie/laravel-ignition": "^2.0 || ^3.0"
+}
+```
+
+<Note>
+  **PHP-CS-Fixer** is configured to enforce consistent code style (`.php-cs-fixer.dist.php`). All code must be formatted before committing.
+</Note>
+
+## Frontend Dependencies (package.json)
+
+### Build Tools
+
+```json
+"devDependencies": {
+    "vite": "^7.2.4",
+    "laravel-vite-plugin": "^2.0.1",
+    "@vitejs/plugin-vue": "^6.0.2",
+    "@vue/compiler-sfc": "^3.5.12",
+    "vue": "^3.0.0"
+}
+```
+
+### UI Libraries
+
+```json
+"dependencies": {
+    "admin-lte": "^3.2.0",
+    "@ttskch/select2-bootstrap4-theme": "^1.5.2",
+    "datatables.net": "^1.13.8",
+    "datatables.net-bs4": "^2.3.5",
+    "jquery": "^3.5.0",
+    "cn-era": "^0.4.1",
+    "sql-formatter": "^15.6.12"
+}
+```
+
+<Warning>
+  **Do not use external CDN links** for jQuery, Bootstrap, or DataTables. All dependencies are bundled by Vite to avoid version conflicts.
+</Warning>
+
+## Frontend Build System
+
+### Vite Configuration
+
+**Entry Points:**
+- `resources/js/app.js` - Main UI components (AdminLTE, Bootstrap, Select2)
+- `resources/js/datatables.js` - DataTables functionality
+- `resources/js/jquery-global.js` - Exposes jQuery to global scope
+
+**Build Commands:**
+
+```bash
+# Development mode (with hot reload)
+npm run dev
+
+# Production build (minified, optimized)
+npm run build
+# or
+npm run prod
+```
+
+<Tip>
+  Always run `npm run build` before committing changes to frontend code to ensure compiled assets are up to date.
+</Tip>
+
+### Vue 3 Components
+
+**Location:** `resources/js/components/`
+
+Vue components are registered in the entry files and can be used in Blade templates:
+
+```vue
+<!-- Example Vue component usage -->
+<div id="app">
+    <example-component></example-component>
+</div>
+```
+
+## Database Compatibility Requirements
+
+<Warning>
+  **Critical:** All database features must be compatible with both MySQL/MariaDB (production) and SQLite (testing).
+</Warning>
+
+### Allowed Features
+
+✅ Standard SQL syntax  
+✅ Laravel Schema Builder methods  
+✅ B-Tree indexes  
+✅ Foreign keys (with proper migration handling)  
+✅ CHAR, VARCHAR, TEXT, INT, BIGINT, DECIMAL, DATE, DATETIME, TIMESTAMP  
+
+### Prohibited Features
+
+❌ MySQL/MariaDB-specific functions (e.g., `FULLTEXT` with ngram parser)  
+❌ Database-specific plugins or extensions  
+❌ Raw SQL without SQLite compatibility checks  
+❌ Database-specific syntax in migrations (use `is_mysql()` / `is_sqlite()` helpers)  
+
+### Migration Helper Functions
+
+**Location:** `database/migrations/helpers.php`
+
+```php
+// Check database type in migrations
+if (is_mysql()) {
+    // MySQL/MariaDB specific code
+}
+
+if (is_sqlite()) {
+    // SQLite specific code or skip unsupported features
+}
+```
+
+<Note>
+  See [Database Setup](/setup/database) for detailed migration guidelines.
+</Note>
+
+## Code Quality Tools
+
+### PHP-CS-Fixer
+
+**Configuration:** `.php-cs-fixer.dist.php`
+
+**Key Rules:**
+- PSR-12 standard with same-line braces
+- Short array syntax `[]` (not `array()`)
+- Alphabetical import ordering
+- Trailing commas in multi-line arrays
+
+**Usage:**
+```bash
+# Format all code
+./vendor/bin/php-cs-fixer fix
+
+# Preview changes without modifying
+./vendor/bin/php-cs-fixer fix --dry-run --diff
+```
+
+### Testing
+
+```bash
+# Run all tests
+./vendor/bin/phpunit
+
+# Run specific test file
+./vendor/bin/phpunit tests/Feature/CodesControllerTest.php
+
+# Run with verbose output
+./vendor/bin/phpunit --verbose
+```
+
+## Environment Configuration
+
+### Required Environment Variables
+
+**Database:**
+```env
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=cbdb
+DB_USERNAME=your_user
+DB_PASSWORD=your_password
+DB_TIMEZONE=+08:00  # MUST match APP_TIMEZONE
+```
+
+<Warning>
+  **Critical:** `DB_TIMEZONE` must be `+08:00` (numeric offset) and match `APP_TIMEZONE=Asia/Shanghai`. Using named timezones in `DB_TIMEZONE` will cause "Unknown or incorrect time zone" errors.
+</Warning>
+
+**Application:**
+```env
+APP_ENV=production
+APP_KEY=base64:...
+APP_DEBUG=false
+APP_TIMEZONE=Asia/Shanghai  # GMT+8
+APP_URL=https://input.cbdb.fas.harvard.edu
+```
+
+### Separate Migration Credentials
+
+<Tip>
+  For security, use separate database accounts for application operations and migrations:
+</Tip>
+
+```env
+# Regular application user (CRUD only)
+DB_USERNAME=cbdb_app
+DB_PASSWORD=***
+
+# Migration user (schema changes)
+DB_MIGRATE_USERNAME=cbdb_migrate
+DB_MIGRATE_PASSWORD=***
+```
+
+## Browser Requirements
+
+**Minimum Browser Versions:**
+- Chrome/Edge: 90+
+- Firefox: 88+
+- Safari: 14+
+
+**Required JavaScript Features:**
+- ES6+ support
+- Fetch API
+- Promise
+- Vue 3 compatibility
+
+## Development Environment Setup
+
+<Steps>
+  <Step title="Install PHP 8.2+ (recommended 8.4)">
+    ```bash
+    php --version  # Verify PHP 8.2 or higher
+    ```
+  </Step>
+  
+  <Step title="Install Composer dependencies">
+    ```bash
+    composer install
+    ```
+  </Step>
+  
+  <Step title="Install Node.js 22.x and npm 10.x">
+    ```bash
+    node --version  # Should show v22.x.x
+    npm --version   # Should show 10.x.x
+    ```
+    
+    Recommended: Use [nvm](https://github.com/nvm-sh/nvm) to manage Node versions.
+  </Step>
+  
+  <Step title="Install frontend dependencies">
+    ```bash
+    npm install
+    ```
+  </Step>
+  
+  <Step title="Build frontend assets">
+    ```bash
+    npm run dev   # Development with hot reload
+    npm run build # Production build
+    ```
+  </Step>
+  
+  <Step title="Configure environment">
+    ```bash
+    cp .env.example .env
+    php artisan key:generate
+    # Edit .env with your database credentials
+    ```
+  </Step>
+  
+  <Step title="Run migrations">
+    ```bash
+    php artisan migrate
+    ```
+  </Step>
+</Steps>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Architecture" href="/dev/architecture" icon="sitemap">
+    System architecture and design patterns
+  </Card>
+  
+  <Card title="Testing" href="/dev/testing" icon="flask">
+    PHPUnit testing guide
+  </Card>
+  
+  <Card title="Database Setup" href="/setup/database" icon="database">
+    Database configuration and migrations
+  </Card>
+  
+  <Card title="GitHub Repository" href="https://github.com/cbdb-project/cbdb-online-main-server" icon="github">
+    Source code repository
+  </Card>
+</CardGroup>

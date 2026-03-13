@@ -1,0 +1,285 @@
+---
+title: 'API 概覽'
+description: 'CBDB Online API 基本介紹、端點概覽與回應格式'
+---
+
+## 簡介
+
+CBDB Online 提供一套 RESTful API，讓開發者與研究人員能夠程式化地存取中國歷代人物傳記資料庫的豐富資料。所有 API 端點使用標準的 HTTP 方法，並以 JSON 格式回傳資料。
+
+<Note>
+API 基礎 URL：`https://input.cbdb.fas.harvard.edu`
+</Note>
+
+## 主要功能
+
+CBDB API 提供以下主要功能類別：
+
+<CardGroup cols={2}>
+  <Card title="代碼表查詢" icon="list">
+    查詢官職、入仕途徑、地點等各類標準化代碼表資料
+  </Card>
+  <Card title="地點檢索" icon="map-location-dot">
+    根據名稱、時間等條件搜尋歷史地點資訊
+  </Card>
+  <Card title="任官記錄" icon="building-columns">
+    查詢人物的官職任命記錄，支援多條件篩選
+  </Card>
+  <Card title="入仕查詢" icon="graduation-cap">
+    根據入仕途徑檢索人物資料
+  </Card>
+  <Card title="親屬關係" icon="users">
+    查詢人物的親屬關係網絡（五服或自訂範圍）
+  </Card>
+  <Card title="社會關係" icon="network-wired">
+    探索人物間的師生、同年、交遊等社會網絡
+  </Card>
+</CardGroup>
+
+## API 端點概覽
+
+### 代碼表與基礎資料
+
+| 端點 | 方法 | 說明 |
+|------|------|------|
+| `/api/post_list` | GET/POST | 根據官職類別代碼獲取官職列表 |
+| `/api/entry_list` | GET/POST | 根據入仕途徑代碼獲取入仕途徑列表 |
+| `/api/office_list_by_name` | GET/POST | 根據官職名稱（中英文）搜尋官職 |
+| `/api/entry_list_by_name` | GET/POST | 根據入仕途徑名稱（中英文）搜尋 |
+| `/api/OFFICE_CODES` | GET/POST | 官職代碼表完整資料 |
+| `/api/OFFICE_CODE_TYPE_REL` | GET/POST | 官職類型關聯表 |
+| `/api/OFFICE_TYPE_TREE` | GET/POST | 官職類型樹狀結構 |
+
+### 地點查詢
+
+| 端點 | 方法 | 說明 |
+|------|------|------|
+| `/api/place_list` | GET/POST | 根據名稱、時間等條件搜尋地點 |
+| `/api/place_belongs_to` | GET/POST | 查詢指定地點下的所有下屬地點 |
+| `/api/query_place` | POST | 通過地區查詢人物與記錄 |
+| `/api/code/addr` | GET | 地址代碼查詢 |
+
+### 任官與入仕
+
+| 端點 | 方法 | 說明 |
+|------|------|------|
+| `/api/query_office_postings` | POST | 查詢任官記錄（支援多條件：官職、地點、時間） |
+| `/api/query_entry_postings` | POST | 通過入仕途徑查詢人物 |
+
+### 關係網絡
+
+| 端點 | 方法 | 說明 |
+|------|------|------|
+| `/api/query_relatives` | POST | 查詢親屬關係（五服） |
+| `/api/query_relatives_1` | POST | 查詢親屬關係（第一版算法） |
+| `/api/query_relatives_2` | POST | 查詢親屬關係（自訂參數） |
+| `/api/get_assoc` | GET/POST | 根據社會關係類型代碼獲取關係 |
+| `/api/find_assoc` | GET/POST | 根據名稱搜尋社會關係 |
+| `/api/query_associates` | POST | 查詢社會關係網絡 |
+| `/api/query_assoc_network` | POST | 查詢社會關係網絡（支援 N 度分隔） |
+
+### 選擇器與搜尋
+
+<Note>
+這些端點支援**可選認證**（Optional Authentication）：已登入使用者可透過 Session Cookie 或 API Token 存取，未登入使用者也能存取。
+</Note>
+
+| 端點分類 | 端點 | 說明 |
+|---------|------|------|
+| **基礎代碼** | `/api/select/ethnicity` | 民族代碼 |
+| | `/api/select/dynasty` | 朝代代碼 |
+| | `/api/select/nianhao` | 年號資料 |
+| | `/api/select/codes` | 通用代碼查詢 |
+| | `/api/select/ganzhi` | 干支紀年 |
+| **地址相關** | `/api/select/choronym` | 地名 |
+| | `/api/select/biogaddr` | 人物地址類型 |
+| **官職相關** | `/api/select/officecate` | 官職類別 |
+| | `/api/select/appttype` | 任官類型 |
+| | `/api/select/assumeoffice` | 赴任情況 |
+| | `/api/select/role` | 官職角色 |
+| **其他** | `/api/select/altcode` | 別名類型 |
+| | `/api/select/range` | 範圍代碼 |
+| | `/api/select/household` | 戶籍類型 |
+| | `/api/select/parentstatus` | 父母狀態 |
+| | `/api/select/measure` | 度量衡單位 |
+| | `/api/select/possact` | 財產行為 |
+| | `/api/select/birole` | 社交機構角色 |
+| | `/api/select/topic` | 文獻主題 |
+| | `/api/select/occasion` | 事件場合 |
+
+**搜尋端點**：
+
+| 端點 | 說明 |
+|------|------|
+| `/api/select/search/addr` | 搜尋地址 |
+| `/api/select/search/text` | 搜尋文獻 |
+| `/api/select/search/textperson` | 搜尋文獻相關人物 |
+| `/api/select/search/textauthor` | 搜尋文獻作者 |
+| `/api/select/search/office` | 搜尋官職 |
+| `/api/select/search/socialinst` | 搜尋社交機構 |
+| `/api/select/search/socialinstaddr` | 搜尋機構地址 |
+| `/api/select/search/socialinstcode` | 搜尋機構代碼 |
+| `/api/select/search/entry` | 搜尋入仕途徑 |
+| `/api/select/search/kincode` | 搜尋親屬關係代碼 |
+| `/api/select/search/assoccode` | 搜尋社會關係代碼 |
+| `/api/select/search/status` | 搜尋身份狀態 |
+| `/api/select/search/biog` | 搜尋人物 |
+| `/api/select/search/event` | 搜尋事件 |
+| `/api/select/search/kinpair` | 搜尋親屬配對 |
+| `/api/select/search/assocpair` | 搜尋社會關係配對 |
+| `/api/select/search/pinyin` | 拼音搜尋 |
+
+### 使用者資訊
+
+| 端點 | 方法 | 說明 | 認證 |
+|------|------|------|------|
+| `/api/user` | GET | 獲取當前登入使用者資訊 | **必須** |
+
+## 標準回應格式
+
+### 成功回應
+
+大部分 API 端點使用以下標準回應格式：
+
+```json
+{
+  "total": 100,
+  "start": 1,
+  "end": 10,
+  "data": [
+    // 實際資料陣列
+  ]
+}
+```
+
+| 欄位 | 類型 | 說明 |
+|------|------|------|
+| `total` | 數字 | 資料總筆數 |
+| `start` | 數字 | 當前資料開始筆數（從 1 開始） |
+| `end` | 數字 | 當前資料結束筆數 |
+| `data` | 陣列 | 實際資料內容 |
+
+### 錯誤回應
+
+當請求失敗時，API 會回傳適當的 HTTP 狀態碼與錯誤訊息：
+
+```json
+{
+  "message": "錯誤描述"
+}
+```
+
+### 常見 HTTP 狀態碼
+
+| 狀態碼 | 說明 |
+|-------|------|
+| `200 OK` | 請求成功 |
+| `400 Bad Request` | 請求參數錯誤 |
+| `401 Unauthorized` | 未認證（需要登入） |
+| `403 Forbidden` | 無權限存取 |
+| `404 Not Found` | 資源不存在 |
+| `429 Too Many Requests` | 超過速率限制 |
+| `500 Internal Server Error` | 伺服器錯誤 |
+
+## 速率限制
+
+<Warning>
+為保護系統穩定性，API 請求受以下速率限制：
+
+- **全局限制**：600 請求/分鐘
+
+超過限制時，伺服器會回傳 `429 Too Many Requests` 錯誤。
+</Warning>
+
+## 資料格式說明
+
+### 日期與時間
+
+- **指數年**（Index Year）：人物活動的代表性年份
+- **朝代代碼**（Dynasty Code）：使用 CBDB 標準朝代編碼
+- **年份範圍**：`dateStartTime` 與 `dateEndTime` 表示時間區間
+
+### 地點座標
+
+地點資料包含經緯度座標：
+
+- `x_coord` 或 `X`：經度（Longitude）
+- `y_coord` 或 `Y`：緯度（Latitude）
+
+### 中英文雙語
+
+大部分資料提供中英文雙語欄位：
+
+- 英文欄位：`c_name`、`pName`、`eName` 等
+- 中文欄位：`c_name_chn`、`pNameChn`、`eNameChn` 等
+
+## 分頁參數
+
+許多端點支援分頁查詢，使用以下參數：
+
+| 參數 | 類型 | 說明 | 預設值 |
+|------|------|------|-------|
+| `start` | 數字 | 開始筆數（從 0 或 1 開始，視端點而定） | 0 或 1 |
+| `list` | 數字 | 每頁筆數 | 無限制 |
+
+<Tip>
+建議使用合理的 `list` 值（如 10、20、50）避免一次請求過多資料。
+</Tip>
+
+## 搜尋參數
+
+### 精確匹配 vs 模糊匹配
+
+許多搜尋端點支援 `accurate` 參數：
+
+- `accurate=1`：**精確匹配**（完全相符）
+- `accurate=0`：**模糊匹配**（部分符合）
+
+### URL 編碼
+
+<Warning>
+**重要**：中文參數必須進行 URL 編碼（percent-encoding）。
+
+範例：
+- 原始字串：`北京`
+- URL 編碼：`%E5%8C%97%E4%BA%AC`
+</Warning>
+
+## 範例請求
+
+### 查詢官職列表
+
+```bash
+curl "https://input.cbdb.fas.harvard.edu/api/post_list?id=06&start=0&list=100"
+```
+
+### 搜尋地點（模糊匹配）
+
+```bash
+curl "https://input.cbdb.fas.harvard.edu/api/place_list?name=%E5%8C%97%E4%BA%AC&accurate=0"
+```
+
+### 查詢使用者資訊（需認證）
+
+```bash
+curl -H "Authorization: Bearer YOUR_API_TOKEN" \
+  "https://input.cbdb.fas.harvard.edu/api/user"
+```
+
+## 下一步
+
+<CardGroup cols={2}>
+  <Card title="認證方式" icon="key" href="/api/authentication">
+    了解如何獲取與使用 API Token
+  </Card>
+  <Card title="端點詳細文檔" icon="book" href="/api/endpoints">
+    查看所有端點的詳細參數與回應格式
+  </Card>
+</CardGroup>
+
+## 技術支援
+
+如有 API 使用問題或建議，請透過以下方式聯繫：
+
+- **GitHub Issues**：[cbdb-project/cbdb-online](https://github.com/cbdb-project/cbdb-online)
+- **電子郵件**：cbdb@fas.harvard.edu

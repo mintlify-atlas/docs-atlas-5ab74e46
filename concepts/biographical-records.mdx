@@ -1,0 +1,315 @@
+---
+title: Biographical Records
+description: Understanding the BIOG_MAIN table structure and how person records are stored in CBDB
+---
+
+## Overview
+
+Biographical records in CBDB Online are stored in the `BIOG_MAIN` table, which serves as the central repository for all person information. Each record represents a historical Chinese figure with comprehensive biographical data including names, dates, locations, and related metadata.
+
+## Table Structure
+
+The `BIOG_MAIN` table uses a single primary key:
+
+```sql
+PRIMARY KEY (`c_personid`)
+```
+
+### Core Identity Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `c_personid` | int | Primary key - unique identifier for each person |
+| `c_name` | varchar(255) | Romanized full name |
+| `c_name_chn` | varchar(255) | Chinese full name |
+| `c_surname` | varchar(255) | Romanized surname |
+| `c_surname_chn` | varchar(255) | Chinese surname (姓) |
+| `c_mingzi` | varchar(255) | Romanized given name |
+| `c_mingzi_chn` | varchar(255) | Chinese given name (名字) |
+
+### Name Variations
+
+<Note>
+CBDB tracks multiple name formats to support different romanization systems and proper name handling.
+</Note>
+
+| Field | Purpose |
+|-------|--------|
+| `c_surname_proper` | Proper case romanized surname |
+| `c_mingzi_proper` | Proper case romanized given name |
+| `c_name_proper` | Proper case full name |
+| `c_surname_rm` | Alternative romanization of surname |
+| `c_mingzi_rm` | Alternative romanization of given name |
+| `c_name_rm` | Alternative romanization of full name |
+
+### Biographical Data Categories
+
+#### 1. Basic Demographics
+
+```php
+$person = DB::table('BIOG_MAIN')
+    ->select('c_personid', 'c_name_chn', 'c_female', 'c_ethnicity_code')
+    ->where('c_personid', 12345)
+    ->first();
+```
+
+- **Gender**: `c_female` (smallint) - 1 for female, 0 or NULL for male
+- **Ethnicity**: `c_ethnicity_code` - references `ETHNICITY_TRIBE_CODES`
+- **Tribe**: `c_tribe` - specific tribe information for non-Han individuals
+- **Household Status**: `c_household_status_code` - references `HOUSEHOLD_STATUS_CODES`
+
+#### 2. Temporal Information
+
+<CardGroup cols={2}>
+  <Card title="Birth Data" icon="calendar">
+    - `c_birthyear` - Birth year (smallint)
+    - `c_by_nh_code` - Birth year era code (nianhao)
+    - `c_by_nh_year` - Year within the era
+    - `c_by_range` - Uncertainty range code
+    - `c_by_intercalary` - Intercalary month indicator
+    - `c_by_month`, `c_by_day` - Month and day
+    - `c_by_day_gz` - Day in ganzhi (干支) system
+  </Card>
+  
+  <Card title="Death Data" icon="calendar-xmark">
+    - `c_deathyear` - Death year (smallint)
+    - `c_dy_nh_code` - Death year era code
+    - `c_dy_nh_year` - Year within the era
+    - `c_dy_range` - Uncertainty range code
+    - `c_death_age` - Age at death
+    - `c_death_age_range` - Uncertainty in age
+    - `c_dy_intercalary`, `c_dy_month`, `c_dy_day`
+    - `c_dy_day_gz` - Day in ganzhi system
+  </Card>
+</CardGroup>
+
+#### 3. Floruit Period (活躍時期)
+
+<Tip>
+When exact birth/death dates are unknown, floruit dates indicate the period when a person was known to be active.
+</Tip>
+
+| Field | Description |
+|-------|-------------|
+| `c_fl_earliest_year` | Earliest recorded activity year |
+| `c_fl_ey_nh_code` | Earliest year era code |
+| `c_fl_ey_nh_year` | Year within era |
+| `c_fl_ey_notes` | Notes about earliest activity |
+| `c_fl_latest_year` | Latest recorded activity year |
+| `c_fl_ly_nh_code` | Latest year era code |
+| `c_fl_ly_nh_year` | Year within era |
+| `c_fl_ly_notes` | Notes about latest activity |
+
+#### 4. Geographic Association
+
+```php
+// Get person's index address (primary geographic association)
+$person = DB::table('BIOG_MAIN')
+    ->join('ADDR_CODES', 'BIOG_MAIN.c_index_addr_id', '=', 'ADDR_CODES.c_addr_id')
+    ->select('BIOG_MAIN.c_personid', 'ADDR_CODES.c_name_chn')
+    ->where('c_personid', 12345)
+    ->first();
+```
+
+- `c_index_addr_id` - Primary address identifier (references `ADDR_CODES`)
+- `c_index_addr_type_code` - Type of address association
+- `c_choronym_code` - Place of origin code (references `CHORONYM_CODES`)
+
+#### 5. Dynasty and Historical Context
+
+```php
+// Get person with dynasty information
+$person = DB::table('BIOG_MAIN')
+    ->join('DYNASTIES', 'BIOG_MAIN.c_dy', '=', 'DYNASTIES.c_dy')
+    ->select('BIOG_MAIN.*', 'DYNASTIES.c_dynasty_chn')
+    ->where('c_personid', 12345)
+    ->first();
+```
+
+- `c_dy` - Dynasty code (references `DYNASTIES` table)
+- `c_index_year` - Index year for chronological ordering
+- `c_index_year_type_code` - Type of index year
+- `c_index_year_source_id` - Source for index year
+
+#### 6. Notes and Metadata
+
+| Field | Type | Purpose |
+|-------|------|--------|
+| `c_notes` | longtext | General biographical notes |
+| `c_self_bio` | smallint | Indicates if person wrote autobiography |
+| `c_created_by` | varchar(255) | Username of record creator |
+| `c_created_date` | varchar(255) | Creation timestamp |
+| `c_modified_by` | varchar(255) | Username of last modifier |
+| `c_modified_date` | varchar(255) | Last modification timestamp |
+
+## Related Tables
+
+<CardGroup cols={2}>
+  <Card title="Alternative Names" icon="tag">
+    `ALTNAME_DATA` stores zi (字), hao (號), and other name variants
+  </Card>
+  
+  <Card title="Offices & Positions" icon="building">
+    `POSTED_TO_OFFICE_DATA` records official appointments and career information
+  </Card>
+  
+  <Card title="Kinship Relations" icon="users">
+    `KIN_DATA` captures family relationships between persons
+  </Card>
+  
+  <Card title="Social Associations" icon="handshake">
+    `ASSOC_DATA` tracks associations, friendships, and social connections
+  </Card>
+</CardGroup>
+
+## Working with BIOG_MAIN
+
+### Using Eloquent Model
+
+<Warning>
+Since `BIOG_MAIN` has a single primary key (`c_personid`), you can use Eloquent models for CRUD operations.
+</Warning>
+
+```php
+// Creating a model (if you have one)
+$person = BiogMain::find(12345);
+
+// Update using Eloquent
+$person->update([
+    'c_notes' => 'Updated biographical notes',
+    'c_modified_by' => Auth::user()->name,
+    'c_modified_date' => now()->format('Y-m-d H:i:s')
+]);
+```
+
+### Using Query Builder
+
+```php
+// Direct query approach
+$person = DB::table('BIOG_MAIN')
+    ->where('c_personid', 12345)
+    ->first();
+
+// Update via Query Builder
+DB::table('BIOG_MAIN')
+    ->where('c_personid', 12345)
+    ->update([
+        'c_notes' => 'Updated notes',
+        'c_modified_by' => Auth::user()->name
+    ]);
+```
+
+## Foreign Key Relationships
+
+The `BIOG_MAIN` table has numerous foreign key constraints ensuring data integrity:
+
+<Steps>
+  <Step title="Dynasty References">
+    Links to `DYNASTIES` table via `c_dy` field
+  </Step>
+  
+  <Step title="Era Name (Nianhao) References">
+    Multiple fields reference `NIAN_HAO`: `c_by_nh_code`, `c_dy_nh_code`, `c_fl_ey_nh_code`, `c_fl_ly_nh_code`
+  </Step>
+  
+  <Step title="Date Precision">
+    Year range codes reference `YEAR_RANGE_CODES` for uncertainty indicators
+  </Step>
+  
+  <Step title="Cyclical Dates">
+    Ganzhi day codes reference `GANZHI_CODES` for traditional calendar system
+  </Step>
+</Steps>
+
+## Querying Person Records
+
+### Basic Person Lookup
+
+```php
+// Find person by ID with all basic info
+$person = DB::table('BIOG_MAIN')
+    ->select(
+        'c_personid',
+        'c_name_chn',
+        'c_surname_chn',
+        'c_mingzi_chn',
+        'c_birthyear',
+        'c_deathyear',
+        'c_dy'
+    )
+    ->where('c_personid', 12345)
+    ->first();
+```
+
+### Search by Name
+
+```php
+// Search for people by Chinese name
+$results = DB::table('BIOG_MAIN')
+    ->where('c_name_chn', 'LIKE', '%王安石%')
+    ->orWhere('c_surname_chn', 'LIKE', '%王%')
+    ->limit(20)
+    ->get();
+```
+
+### Dynasty-Based Queries
+
+```php
+// Get all Song dynasty persons
+$songPeople = DB::table('BIOG_MAIN')
+    ->join('DYNASTIES', 'BIOG_MAIN.c_dy', '=', 'DYNASTIES.c_dy')
+    ->where('DYNASTIES.c_dynasty_chn', 'LIKE', '%宋%')
+    ->select('BIOG_MAIN.*', 'DYNASTIES.c_dynasty_chn')
+    ->get();
+```
+
+## Operation Tracking
+
+All modifications to `BIOG_MAIN` records are tracked in the `operations` table:
+
+```php
+use App\Repositories\OperationRepository;
+
+$operationRepo = new OperationRepository();
+
+// Log an update operation
+$operationRepo->store(
+    user_id: Auth::id(),
+    c_personid: $personId,
+    op_type: 2, // Update operation
+    resource: 'BIOG_MAIN',
+    resource_id: (string) $personId,
+    resource_data: $updatedData,
+    ori: $originalData
+);
+```
+
+<Note>
+Refer to the [Operations Audit](/concepts/operations-audit) documentation for detailed information about operation logging.
+</Note>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Always Log Changes" icon="book">
+    Use `OperationRepository::store()` for all data modifications to maintain audit trail
+  </Card>
+  
+  <Card title="Update Timestamps" icon="clock">
+    Set `c_modified_by` and `c_modified_date` when updating records
+  </Card>
+  
+  <Card title="Respect Foreign Keys" icon="link">
+    Verify that referenced codes exist in lookup tables before inserting/updating
+  </Card>
+  
+  <Card title="Handle NULL Values" icon="question">
+    Many fields are nullable - check for NULL when processing data
+  </Card>
+</CardGroup>
+
+## See Also
+
+- [Data Model](/concepts/data-model) - Complete database schema overview
+- [Operations Audit](/concepts/operations-audit) - How changes are tracked
+- [User Roles](/concepts/user-roles) - Permission system for data modification
